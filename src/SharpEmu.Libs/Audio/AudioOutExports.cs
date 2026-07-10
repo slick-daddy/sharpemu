@@ -2,7 +2,9 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 using SharpEmu.HLE;
+using System.Buffers;
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Threading;
 
 namespace SharpEmu.Libs.Audio;
@@ -12,7 +14,70 @@ public static class AudioOutExports
     private static readonly ConcurrentDictionary<int, PortState> Ports = new();
     private static int _nextPortHandle;
 
-    private sealed record PortState(int UserId, int Type, uint BufferLength, uint Frequency, int Format);
+    private sealed class PortState : IDisposable
+    {
+        private readonly object _paceGate = new();
+        private long _nextSilentOutput;
+
+        public PortState(
+            int userId,
+            int type,
+            uint bufferLength,
+            uint frequency,
+            int format,
+            int channels,
+            int bytesPerSample,
+            bool isFloat,
+            WinMmAudioPort? backend)
+        {
+            UserId = userId;
+            Type = type;
+            BufferLength = bufferLength;
+            Frequency = frequency;
+            Format = format;
+            Channels = channels;
+            BytesPerSample = bytesPerSample;
+            IsFloat = isFloat;
+            Backend = backend;
+        }
+
+        public int UserId { get; }
+        public int Type { get; }
+        public uint BufferLength { get; }
+        public uint Frequency { get; }
+        public int Format { get; }
+        public int Channels { get; }
+        public int BytesPerSample { get; }
+        public bool IsFloat { get; }
+        public WinMmAudioPort? Backend { get; }
+        public int BufferByteLength =>
+            checked((int)BufferLength * Channels * BytesPerSample);
+
+        public void PaceSilence()
+        {
+            long delay;
+            lock (_paceGate)
+            {
+                var now = Stopwatch.GetTimestamp();
+                if (_nextSilentOutput < now)
+                {
+                    _nextSilentOutput = now;
+                }
+
+                delay = _nextSilentOutput - now;
+                _nextSilentOutput += checked(
+                    (long)Math.Ceiling(
+                        Stopwatch.Frequency * (double)BufferLength / Frequency));
+            }
+
+            if (delay > 0)
+            {
+                Thread.Sleep(TimeSpan.FromSeconds((double)delay / Stopwatch.Frequency));
+            }
+        }
+
+        public void Dispose() => Backend?.Dispose();
+    }
 
     [SysAbiExport(
         Nid = "JfEPXVxhFqA",
@@ -33,13 +98,41 @@ public static class AudioOutExports
         var bufferLength = unchecked((uint)ctx[CpuRegister.Rcx]);
         var frequency = unchecked((uint)ctx[CpuRegister.R8]);
         var format = unchecked((int)ctx[CpuRegister.R9]);
-        if (bufferLength == 0 || frequency == 0)
+        if (bufferLength == 0 || frequency == 0 ||
+            !TryGetFormat(format, out var channels, out var bytesPerSample, out var isFloat))
         {
             return SetReturn(ctx, (int)OrbisGen2Result.ORBIS_GEN2_ERROR_INVALID_ARGUMENT);
         }
 
+        WinMmAudioPort? backend = null;
+        string backendName;
+        try
+        {
+            backend = new WinMmAudioPort(frequency);
+            backendName = "winmm";
+        }
+        catch (Exception exception)
+        {
+            backendName = "silent";
+            Console.Error.WriteLine(
+                $"[LOADER][WARN] AudioOut host backend unavailable: {exception.Message}");
+        }
+
         var handle = Interlocked.Increment(ref _nextPortHandle);
-        Ports[handle] = new PortState(userId, type, bufferLength, frequency, format);
+        Ports[handle] = new PortState(
+            userId,
+            type,
+            bufferLength,
+            frequency,
+            format,
+            channels,
+            bytesPerSample,
+            isFloat,
+            backend);
+        Console.Error.WriteLine(
+            $"[LOADER][INFO] AudioOut port {handle}: {frequency} Hz, " +
+            $"{channels} ch, {(isFloat ? "float32" : "s16")}, " +
+            $"{bufferLength} frames, backend={backendName}");
         return SetReturn(ctx, handle);
     }
 
@@ -51,11 +144,13 @@ public static class AudioOutExports
     public static int AudioOutClose(CpuContext ctx)
     {
         var handle = unchecked((int)ctx[CpuRegister.Rdi]);
-        return SetReturn(
-            ctx,
-            Ports.TryRemove(handle, out _)
-                ? 0
-                : (int)OrbisGen2Result.ORBIS_GEN2_ERROR_INVALID_ARGUMENT);
+        if (!Ports.TryRemove(handle, out var port))
+        {
+            return SetReturn(ctx, (int)OrbisGen2Result.ORBIS_GEN2_ERROR_INVALID_ARGUMENT);
+        }
+
+        port.Dispose();
+        return SetReturn(ctx, 0);
     }
 
     [SysAbiExport(
@@ -65,8 +160,44 @@ public static class AudioOutExports
         LibraryName = "libSceAudioOut")]
     public static int AudioOutOutput(CpuContext ctx)
     {
-        ctx[CpuRegister.Rax] = 0;
-        return (int)OrbisGen2Result.ORBIS_GEN2_OK;
+        var handle = unchecked((int)ctx[CpuRegister.Rdi]);
+        var sourceAddress = ctx[CpuRegister.Rsi];
+        if (!Ports.TryGetValue(handle, out var port))
+        {
+            return SetReturn(ctx, (int)OrbisGen2Result.ORBIS_GEN2_ERROR_INVALID_ARGUMENT);
+        }
+
+        if (sourceAddress == 0)
+        {
+            return SetReturn(ctx, 0);
+        }
+
+        var buffer = ArrayPool<byte>.Shared.Rent(port.BufferByteLength);
+        try
+        {
+            var source = buffer.AsSpan(0, port.BufferByteLength);
+            if (!ctx.Memory.TryRead(sourceAddress, source))
+            {
+                return SetReturn(ctx, (int)OrbisGen2Result.ORBIS_GEN2_ERROR_MEMORY_FAULT);
+            }
+
+            if (port.Backend is null ||
+                !port.Backend.Submit(
+                    source,
+                    port.BufferLength,
+                    port.Channels,
+                    port.BytesPerSample,
+                    port.IsFloat))
+            {
+                port.PaceSilence();
+            }
+
+            return SetReturn(ctx, 0);
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
     }
 
     [SysAbiExport(
@@ -88,5 +219,24 @@ public static class AudioOutExports
     {
         ctx[CpuRegister.Rax] = unchecked((ulong)result);
         return result;
+    }
+
+    private static bool TryGetFormat(
+        int rawFormat,
+        out int channels,
+        out int bytesPerSample,
+        out bool isFloat)
+    {
+        var format = rawFormat & 0xFF;
+        channels = format switch
+        {
+            0 or 3 => 1,
+            1 or 4 => 2,
+            2 or 5 or 6 or 7 => 8,
+            _ => 0,
+        };
+        bytesPerSample = format is >= 3 and <= 5 or 7 ? 4 : 2;
+        isFloat = bytesPerSample == 4;
+        return channels != 0;
     }
 }
