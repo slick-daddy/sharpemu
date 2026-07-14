@@ -5,6 +5,7 @@ using SharpEmu.Core.Runtime;
 using SharpEmu.Core.Cpu;
 using SharpEmu.GUI;
 using SharpEmu.HLE;
+using SharpEmu.Libs.VideoOut;
 using SharpEmu.Logging;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -111,8 +112,16 @@ internal static partial class Program
         using var runtime = SharpEmuRuntime.CreateDefault(runtimeOptions);
 
         OrbisGen2Result result;
+        ConsoleCancelEventHandler? cancelHandler = null;
         try
         {
+            cancelHandler = (_, eventArgs) =>
+            {
+                eventArgs.Cancel = true;
+                VideoOutExports.NotifyHostInterrupt();
+            };
+            Console.CancelKeyPress += cancelHandler;
+
             Console.Error.WriteLine($"[DEBUG] Running: {ebootPath}");
             result = runtime.Run(ebootPath);
             Console.Error.WriteLine($"[DEBUG] Result: {result}");
@@ -122,6 +131,13 @@ internal static partial class Program
             Console.Error.WriteLine($"[DEBUG] Exception: {ex}");
             Log.Error("SharpEmu failed to run.", ex);
             return 3;
+        }
+        finally
+        {
+            if (cancelHandler is not null)
+            {
+                Console.CancelKeyPress -= cancelHandler;
+            }
         }
 
         Log.Info($"SharpEmu execution completed. Result={result} (0x{(int)result:X8})");
