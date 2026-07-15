@@ -6,11 +6,13 @@ using System.Collections.Concurrent;
 using System.Text;
 using SharpEmu.HLE;
 using SharpEmu.Libs.Fiber;
+using SharpEmu.Logging;
 
 namespace SharpEmu.Libs.Kernel;
 
 public static class KernelEventFlagCompatExports
 {
+    private static readonly SharpEmuLogger Log = SharpEmuLog.For("Libs.Kernel");
     private const int MaxEventFlagNameLength = 31;
     private const int HostWaitPumpMilliseconds = 1;
     private const uint AttrThreadFifo = 0x01;
@@ -575,7 +577,7 @@ public static class KernelEventFlagCompatExports
     {
         if (_traceEventFlag)
         {
-            Console.Error.WriteLine($"[LOADER][TRACE] event_flag.{message}");
+            Log.Trace($"event_flag.{message}");
         }
     }
 

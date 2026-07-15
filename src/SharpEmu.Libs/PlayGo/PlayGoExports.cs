@@ -4,12 +4,17 @@
 using SharpEmu.HLE;
 using System.Buffers.Binary;
 using System.Text.RegularExpressions;
+<<<<<<< HEAD
 using System.Xml.Linq;
+=======
+using SharpEmu.Logging;
+>>>>>>> ab12482 (fix: resolve duplicate event handlers, remove dead code, and migrate logging to structured logger)
 
 namespace SharpEmu.Libs.PlayGo;
 
 public static class PlayGoExports
 {
+    private static readonly SharpEmuLogger Log = SharpEmuLog.For("Libs.PlayGo");
     private const int OrbisPlayGoErrorInvalidArgument = unchecked((int)0x80B20004);
     private const int OrbisPlayGoErrorNotInitialized = unchecked((int)0x80B20005);
     private const int OrbisPlayGoErrorAlreadyInitialized = unchecked((int)0x80B20006);
@@ -415,9 +420,10 @@ public static class PlayGoExports
                         knownChunkIds = _metadata.ChunkIds;
                     }
 
-                    Console.Error.WriteLine(
-                        $"[LOADER][TRACE] playgo.unknown_chunk_id id={chunkId} entries={numberOfEntries} " +
-                        $"known=[{string.Join(',', knownChunkIds)}]");
+                    Log.Trace(
+  $"playgo.unknown_chunk_id id={chunkId} entries={numberOfEntries} " +
+                        $"known=[{string.Join(',', knownChunkIds)}]"
+);
                 }
 
                 // Real firmware rejects chunk ids outside the package's chunk set.
@@ -767,24 +773,23 @@ public static class PlayGoExports
     {
         if (string.Equals(Environment.GetEnvironmentVariable("SHARPEMU_LOG_PLAYGO"), "1", StringComparison.Ordinal))
         {
-            Console.Error.WriteLine($"[LOADER][TRACE] playgo.{message}");
+            Log.Trace($"playgo.{message}");
         }
     }
 
     private static void TracePlayGoLocus(CpuContext ctx, uint entries, ulong chunkIds, ulong outLoci)
     {
-        if (!string.Equals(Environment.GetEnvironmentVariable("SHARPEMU_LOG_PLAYGO"), "1", StringComparison.Ordinal))
-        {
-            return;
-        }
-
         var count = Interlocked.Increment(ref _locusTraceDiagnostics);
         if (entries != 1 || count <= 32 || count % 1000 == 0)
         {
+<<<<<<< HEAD
             _ = ctx.TryReadUInt16(chunkIds, out var firstChunkId);
             Console.Error.WriteLine(
                 $"[LOADER][TRACE] playgo.get_locus entries={entries} first_chunk={firstChunkId} " +
                 $"chunk_ids=0x{chunkIds:X16} out=0x{outLoci:X16}");
+=======
+            Log.Trace($"playgo.get_locus entries={entries} chunk_ids=0x{chunkIds:X16} out=0x{outLoci:X16}");
+>>>>>>> ab12482 (fix: resolve duplicate event handlers, remove dead code, and migrate logging to structured logger)
         }
     }
 

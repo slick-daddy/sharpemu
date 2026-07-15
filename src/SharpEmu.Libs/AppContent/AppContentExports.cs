@@ -10,6 +10,7 @@ namespace SharpEmu.Libs.AppContent;
 
 public static class AppContentExports
 {
+    private static readonly SharpEmuLogger Log = SharpEmuLog.For("Libs.AppContent");
     private const ulong BootParamAttrOffset = 4;
     private const string Temp0MountPoint = "/temp0";
     private const uint AppParamSkuFlag = 0;
@@ -145,6 +146,7 @@ public static class AppContentExports
         {
             using var stream = File.OpenRead(paramJsonPath);
             using var document = JsonDocument.Parse(stream);
+using SharpEmu.Logging;
             var propertyName = $"userDefinedParam{paramId}";
             if (document.RootElement.TryGetProperty(propertyName, out var element) &&
                 element.TryGetInt32(out var parsedValue))
@@ -170,12 +172,7 @@ public static class AppContentExports
 
     private static void TraceAppContent(string message)
     {
-        if (!string.Equals(Environment.GetEnvironmentVariable("SHARPEMU_LOG_APP_CONTENT"), "1", StringComparison.Ordinal))
-        {
-            return;
-        }
-
-        Console.Error.WriteLine($"[LOADER][TRACE] app_content.{message}");
+        Log.Trace($"app_content.{message}");
     }
 
     private static string ResolveTemp0Root()

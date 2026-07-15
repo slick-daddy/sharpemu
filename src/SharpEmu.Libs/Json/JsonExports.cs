@@ -8,11 +8,13 @@ using System.Linq;
 using System.Text;
 using System.Text.Json;
 using SharpEmu.HLE;
+using SharpEmu.Logging;
 
 namespace SharpEmu.Libs.Json;
 
 public static class JsonExports
 {
+<<<<<<< HEAD
     private const int ValueObjectSize = 0x20;
     private const int StringObjectSize = 0x08;
     private const ulong MaximumJsonBufferSize = 16 * 1024 * 1024;
@@ -30,6 +32,9 @@ public static class JsonExports
     private static readonly ConcurrentDictionary<ulong, JsonStringState> _strings = new();
     private static readonly JsonElement _nullElement = CreateNullElement();
 
+=======
+    private static readonly SharpEmuLogger Log = SharpEmuLog.For("Libs.Json");
+>>>>>>> ab12482 (fix: resolve duplicate event handlers, remove dead code, and migrate logging to structured logger)
     [SysAbiExport(
         Nid = "-hJRce8wn1U",
         ExportName = "_ZN3sce4Json12MemAllocatorC2Ev",
@@ -663,14 +668,9 @@ public static class JsonExports
 
     private static void TraceJson(string operation, ulong thisAddress, ulong argument)
     {
-        if (!string.Equals(Environment.GetEnvironmentVariable("SHARPEMU_LOG_JSON"), "1", StringComparison.Ordinal))
-        {
-            return;
-        }
-
-        Console.Error.WriteLine(
-            $"[LOADER][TRACE] json.{operation} this=0x{thisAddress:X16} arg=0x{argument:X16}");
+        Log.Trace($"json.{operation} this=0x{thisAddress:X16} arg=0x{argument:X16}");
     }
+<<<<<<< HEAD
 
     private static void TraceJsonText(string operation, ulong thisAddress, string value)
     {
@@ -684,3 +684,6 @@ public static class JsonExports
             $"[LOADER][TRACE] json.{operation} this=0x{thisAddress:X16} value={preview}");
     }
 }
+=======
+}
+>>>>>>> ab12482 (fix: resolve duplicate event handlers, remove dead code, and migrate logging to structured logger)

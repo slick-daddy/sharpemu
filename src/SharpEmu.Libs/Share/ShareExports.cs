@@ -3,11 +3,13 @@
 
 using System.Text;
 using SharpEmu.HLE;
+using SharpEmu.Logging;
 
 namespace SharpEmu.Libs.Share;
 
 public static class ShareExports
 {
+    private static readonly SharpEmuLogger Log = SharpEmuLog.For("Libs.Share");
     private const int MaxContentParamBytes = 4096;
 
     private static int _initialized;
@@ -95,11 +97,6 @@ public static class ShareExports
 
     private static void TraceShare(string message)
     {
-        if (!string.Equals(Environment.GetEnvironmentVariable("SHARPEMU_LOG_SHARE"), "1", StringComparison.Ordinal))
-        {
-            return;
-        }
-
-        Console.Error.WriteLine($"[LOADER][TRACE] share.{message}");
+        Log.Trace($"share.{message}");
     }
 }

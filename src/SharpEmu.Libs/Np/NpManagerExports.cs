@@ -3,11 +3,13 @@
 
 using SharpEmu.HLE;
 using System.Buffers.Binary;
+using SharpEmu.Logging;
 
 namespace SharpEmu.Libs.Np;
 
 public static class NpManagerExports
 {
+    private static readonly SharpEmuLogger Log = SharpEmuLog.For("Libs.Np");
     private const int NpTitleIdSize = 16;
     private const int NpTitleSecretSize = 128;
     private const int NpErrorInvalidArgument = unchecked((int)0x80550003);
@@ -229,12 +231,7 @@ public static class NpManagerExports
 
     private static void TraceNp(string message)
     {
-        if (!string.Equals(Environment.GetEnvironmentVariable("SHARPEMU_LOG_NP"), "1", StringComparison.Ordinal))
-        {
-            return;
-        }
-
-        Console.Error.WriteLine($"[LOADER][TRACE] np.{message}");
+        Log.Trace($"np.{message}");
     }
 
     private static int WriteOfflineOnlineId(CpuContext ctx, ulong address)

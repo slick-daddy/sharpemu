@@ -5,11 +5,13 @@ using System;
 using System.Collections.Concurrent;
 using System.Threading;
 using SharpEmu.HLE;
+using SharpEmu.Logging;
 
 namespace SharpEmu.Libs.CxxAbi;
 
 public static class CxaGuardExports
 {
+    private static readonly SharpEmuLogger Log = SharpEmuLog.For("Libs.CxxAbi");
     private const ulong GuardCompleteValue = 0x0000_0000_0000_0001;
     private const ulong GuardPendingValue = 0x0000_0000_0000_0100;
     private const ulong GuardStateMask = 0x0000_0000_0000_FFFF;
@@ -199,24 +201,13 @@ public static class CxaGuardExports
 
     private static void LogGuardState(CpuContext ctx, string op, ulong guardPtr, bool initialized, bool inProgress)
     {
-        if (!string.Equals(Environment.GetEnvironmentVariable("SHARPEMU_LOG_GUARDS"), "1", StringComparison.Ordinal))
-        {
-            return;
-        }
-
         var readable = ctx.TryReadUInt64(guardPtr, out var word);
-        Console.Error.WriteLine(
-            $"[LOADER][TRACE] {op}: guard=0x{guardPtr:X16} init={initialized} in_progress={inProgress} word={(readable ? $"0x{word:X16}" : "<unreadable>")}");
+        Log.Trace(
+            $"{op}: guard=0x{guardPtr:X16} init={initialized} in_progress={inProgress} word={(readable ? $"0x{word:X16}" : "<unreadable>")}");
     }
 
     private static void LogGuardResult(string op, ulong guardPtr, int result, bool initialized, bool inProgress, int ownerThreadId)
     {
-        if (!string.Equals(Environment.GetEnvironmentVariable("SHARPEMU_LOG_GUARDS"), "1", StringComparison.Ordinal))
-        {
-            return;
-        }
-
-        Console.Error.WriteLine(
-            $"[LOADER][TRACE] {op}: guard=0x{guardPtr:X16} result={result} init={initialized} in_progress={inProgress} owner_thread={ownerThreadId}");
+        Log.Trace($"{op}: guard=0x{guardPtr:X16} result={result} init={initialized} in_progress={inProgress} owner_thread={ownerThreadId}");
     }
 }

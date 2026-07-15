@@ -8,11 +8,13 @@ using System.Net.Sockets;
 using System.Runtime.InteropServices;
 using System.Text;
 using SharpEmu.HLE;
+using SharpEmu.Logging;
 
 namespace SharpEmu.Libs.Network;
 
 public static class NetExports
 {
+    private static readonly SharpEmuLogger Log = SharpEmuLog.For("Libs.Network");
     private const int NetErrorBadFileDescriptor = unchecked((int)0x80410109);
     private const int NetErrorInvalidArgument = unchecked((int)0x80410116);
     private const int NetErrorWouldBlock = unchecked((int)0x80410123);
@@ -551,12 +553,6 @@ public static class NetExports
 
     private static void TraceNet(string operation, int id, ulong arg0, ulong arg1, ulong arg2)
     {
-        if (!string.Equals(Environment.GetEnvironmentVariable("SHARPEMU_LOG_NET"), "1", StringComparison.Ordinal))
-        {
-            return;
-        }
-
-        Console.Error.WriteLine(
-            $"[LOADER][TRACE] net.{operation} id={id} arg0=0x{arg0:X16} arg1=0x{arg1:X16} arg2=0x{arg2:X16}");
+        Log.Trace($"net.{operation} id={id} arg0=0x{arg0:X16} arg1=0x{arg1:X16} arg2=0x{arg2:X16}");
     }
 }

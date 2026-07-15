@@ -6,11 +6,13 @@ using SharpEmu.Libs.Kernel;
 using System.Buffers;
 using System.Buffers.Binary;
 using System.Collections.Concurrent;
+using SharpEmu.Logging;
 
 namespace SharpEmu.Libs.Ampr;
 
 public static class AmprExports
 {
+    private static readonly SharpEmuLogger Log = SharpEmuLog.For("Libs.Ampr");
     private const int CommandBufferHeaderSize = 0x28;
     private const ulong CommandBufferSelfOffset = 0x00;
     private const ulong CommandBufferDataOffset = 0x08;
@@ -25,9 +27,7 @@ public static class AmprExports
     private const uint WriteAddressRecordType = 3;
     private static readonly ConcurrentDictionary<ulong, CommandBufferState> _commandBuffers = new();
     private static readonly ConcurrentDictionary<string, Lazy<CachedHostFile>> _hostFileCache = new(StringComparer.OrdinalIgnoreCase);
-    private static readonly bool _traceAmpr =
-        string.Equals(Environment.GetEnvironmentVariable("SHARPEMU_LOG_AMPR"), "1", StringComparison.Ordinal);
-    private static readonly bool _traceAmprReads =
+private static readonly bool _traceAmprReads =
         _traceAmpr ||
         string.Equals(Environment.GetEnvironmentVariable("SHARPEMU_LOG_AMPR_READS"), "1", StringComparison.Ordinal);
 
@@ -977,15 +977,9 @@ public static class AmprExports
 
     private static void TraceAmpr(CpuContext ctx, string operation, ulong commandBuffer, ulong arg0, ulong arg1)
     {
-        if (!_traceAmpr)
-        {
-            return;
-        }
-
         var returnRip = 0UL;
         _ = ctx.TryReadUInt64(ctx[CpuRegister.Rsp], out returnRip);
-        Console.Error.WriteLine(
-            $"[LOADER][TRACE] ampr.{operation}: cmd=0x{commandBuffer:X16} arg0=0x{arg0:X16} arg1=0x{arg1:X16} ret=0x{returnRip:X16}");
+        Log.Trace($"ampr.{operation}: cmd=0x{commandBuffer:X16} arg0=0x{arg0:X16} arg1=0x{arg1:X16} ret=0x{returnRip:X16}");
     }
 
     private static void TraceAmprRead(
@@ -999,14 +993,9 @@ public static class AmprExports
         string? hostPath,
         int result)
     {
-        if (!_traceAmprReads)
-        {
-            return;
-        }
-
         var returnRip = 0UL;
         _ = ctx.TryReadUInt64(ctx[CpuRegister.Rsp], out returnRip);
-        Console.Error.WriteLine(
-            $"[LOADER][TRACE] ampr.read_file: cmd=0x{commandBuffer:X16} id=0x{fileId:X8} dst=0x{destination:X16} size=0x{size:X16} offset=0x{fileOffset:X16} read=0x{bytesRead:X16} result=0x{result:X8} path='{hostPath ?? string.Empty}' ret=0x{returnRip:X16}");
+        Log.Trace(
+            ampr.read_file: cmd=0x{commandBuffer:X16} id=0x{fileId:X8} dst=0x{destination:X16} size=0x{size:X16} offset=0x{fileOffset:X16} read=0x{bytesRead:X16} result=0x{result:X8} path='{hostPath ?? string.Empty}' ret=0x{returnRip:X16}");
     }
 }

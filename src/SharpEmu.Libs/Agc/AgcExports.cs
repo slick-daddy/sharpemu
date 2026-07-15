@@ -9,11 +9,13 @@ using SharpEmu.Libs.Kernel;
 using SharpEmu.Libs.VideoOut;
 using System.Buffers.Binary;
 using System.Runtime.CompilerServices;
+using SharpEmu.Logging;
 
 namespace SharpEmu.Libs.Agc;
 
 public static partial class AgcExports
 {
+<<<<<<< HEAD
 #if DEBUG
     static AgcExports()
     {
@@ -25,6 +27,9 @@ public static partial class AgcExports
     }
 #endif
 
+=======
+    private static readonly SharpEmuLogger Log = SharpEmuLog.For("Libs.Agc");
+>>>>>>> ab12482 (fix: resolve duplicate event handlers, remove dead code, and migrate logging to structured logger)
     private const uint ShaderFileHeader = 0x34333231;
     private const uint ShaderVersion = 0x18;
     private const uint ItNop = 0x10;
@@ -7609,13 +7614,14 @@ public static partial class AgcExports
             return;
         }
 
-        Console.Error.WriteLine(
-            $"[LOADER][TRACE] agc.texture_fallback reason={reason} " +
+        Log.Trace(
+  $"agc.texture_fallback reason={reason} " +
             $"addr=0x{descriptor.Address:X16} type={descriptor.Type} " +
             $"size={descriptor.Width}x{descriptor.Height} pitch={descriptor.Pitch} " +
             $"fmt={descriptor.Format} num={descriptor.NumberType} " +
             $"tile={descriptor.TileMode} mip={descriptor.MipLevels} " +
-            $"dst=0x{descriptor.DstSelect:X3}");
+            $"dst=0x{descriptor.DstSelect:X3}"
+);
     }
 
     private static bool TryCreateGuestDrawTexture(
@@ -8116,6 +8122,12 @@ public static partial class AgcExports
         }
         catch (IOException)
         {
+<<<<<<< HEAD
+=======
+            // A bad SHARPEMU_TEXTURE_DUMP_DIR (permissions, invalid path)
+            // must not take the emulator down; the dump is a debug aid.
+            Log.Warn($"Texture dump failed: {exception.Message}");
+>>>>>>> ab12482 (fix: resolve duplicate event handlers, remove dead code, and migrate logging to structured logger)
         }
     }
 
@@ -8178,7 +8190,40 @@ public static partial class AgcExports
             MipLevel: 0);
     }
 
+<<<<<<< HEAD
     private static GuestSampler ToGuestSampler(IReadOnlyList<uint> descriptor) =>
+=======
+    private static void TraceTextureHash(TextureDescriptor descriptor, ReadOnlySpan<byte> source)
+    {
+        if (!_traceTextureHashes ||
+            descriptor.Address == 0 ||
+            descriptor.Width > 256 ||
+            descriptor.Height > 256)
+        {
+            return;
+        }
+
+        var hash = ComputeFingerprint(source);
+        var key = (descriptor.Address, descriptor.Width, descriptor.Height);
+        lock (_textureHashTraceGate)
+        {
+            if (_tracedTextureHashes.TryGetValue(key, out var previousHash) &&
+                previousHash == hash)
+            {
+                return;
+            }
+
+            _tracedTextureHashes[key] = hash;
+        }
+
+        Log.Trace(
+  $"agc.texture_hash addr=0x{descriptor.Address:X16} " +
+            $"size={descriptor.Width}x{descriptor.Height} bytes={source.Length} hash=0x{hash:X16}"
+);
+    }
+
+    private static VulkanGuestSampler ToVulkanSampler(IReadOnlyList<uint> descriptor) =>
+>>>>>>> ab12482 (fix: resolve duplicate event handlers, remove dead code, and migrate logging to structured logger)
         descriptor.Count >= 4
             ? new GuestSampler(
                 descriptor[0],
@@ -9621,7 +9666,6 @@ public static partial class AgcExports
     {
         lock (_submitTraceGate)
         {
-            if (_tracedMissingPixelShaderBindings)
             {
                 return false;
             }
@@ -10773,12 +10817,7 @@ public static partial class AgcExports
 
     private static void TraceAgc(string message)
     {
-        if (!_traceAgc)
-        {
-            return;
-        }
-
-        Console.Error.WriteLine($"[LOADER][TRACE] {message}");
+        Log.Trace($"{message}");
     }
 
     private static void TraceAgcShader(
@@ -10792,12 +10831,7 @@ public static partial class AgcExports
 
     private static void TraceAgcShader(string message)
     {
-        if (!_traceAgcShader)
-        {
-            return;
-        }
-
-        Console.Error.WriteLine($"[LOADER][TRACE] {message}");
+        Log.Trace($"{message}");
     }
 
     private static string FormatShaderDwords(IReadOnlyList<uint> values) =>
@@ -10910,8 +10944,7 @@ public static partial class AgcExports
             return;
         }
 
-        Console.Error.WriteLine(
-            $"[LOADER][TRACE] agc.create_shader dst=0x{destinationAddress:X16} header=0x{headerAddress:X16} code=0x{codeAddress:X16} {detail}");
+        Log.Trace($"agc.create_shader dst=0x{destinationAddress:X16} header=0x{headerAddress:X16} code=0x{codeAddress:X16} {detail}");
     }
 
     [SysAbiExport(

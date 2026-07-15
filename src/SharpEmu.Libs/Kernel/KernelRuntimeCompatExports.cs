@@ -12,11 +12,29 @@ using System.Runtime.Intrinsics.X86;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
+using SharpEmu.Logging;
 
 namespace SharpEmu.Libs.Kernel;
 
 public static class KernelRuntimeCompatExports
 {
+    private static readonly SharpEmuLogger Log = SharpEmuLog.For("Libs.Kernel");
+    internal const int ClockRealtime = 0;
+    internal const int ClockVirtual = 1;
+    internal const int ClockProf = 2;
+    internal const int ClockMonotonic = 4;
+    internal const int ClockUptime = 5;
+    internal const int ClockUptimePrecise = 7;
+    internal const int ClockUptimeFast = 8;
+    internal const int ClockRealtimePrecise = 9;
+    internal const int ClockRealtimeFast = 10;
+    internal const int ClockMonotonicPrecise = 11;
+    internal const int ClockMonotonicFast = 12;
+    internal const int ClockSecond = 13;
+    internal const int ClockThreadCputimeId = 14;
+    internal const int ClockProcTime = 15;
+    private const int Efault = 14;
+    private const int Einval = 22;
     private const ulong TlsErrnoOffset = 0x40;
     private const ulong TlsStackChkGuardBaseOffset = 0x800;
     private const ulong StackChkGuardFieldOffset = 0x10;
@@ -66,9 +84,7 @@ public static class KernelRuntimeCompatExports
     private static readonly (ulong Base, ulong Size)[] _prtApertures = new (ulong Base, ulong Size)[3];
     private static int _stackChkFailCount;
     private static long _usleepTraceCount;
-    private static readonly bool _traceUsleep =
-        string.Equals(Environment.GetEnvironmentVariable("SHARPEMU_LOG_USLEEP"), "1", StringComparison.Ordinal);
-    private static readonly bool _traceGuestThreads =
+private static readonly bool _traceGuestThreads =
         string.Equals(Environment.GetEnvironmentVariable("SHARPEMU_LOG_GUEST_THREADS"), "1", StringComparison.Ordinal);
 
     [ThreadStatic]
@@ -127,11 +143,6 @@ public static class KernelRuntimeCompatExports
 
     private static void TraceUsleepSpin(CpuContext ctx, ulong micros)
     {
-        if (!_traceUsleep)
-        {
-            return;
-        }
-
         var count = Interlocked.Increment(ref _usleepTraceCount);
         if (count > 32 && count % 10000 != 0)
         {
@@ -173,8 +184,9 @@ public static class KernelRuntimeCompatExports
         var thread = GuestThreadExecution.CurrentGuestThreadHandle;
         var fiber = FiberExports.GetCurrentFiberAddressForDiagnostics(ctx);
 
-        Console.Error.WriteLine(
-            $"[LOADER][TRACE] usleep#{count}: usec={micros} ret=0x{returnRip:X16} caller={callerReturnText} thread=0x{thread:X16} fiber=0x{fiber:X16} rbx=0x{rbx:X16} lock@+F78=0x{lockAddress:X16}:{lockText} r12=0x{r12:X16} scheduler@+8={schedulerText} r13=0x{r13:X16}:{waitValueText} r14=0x{ctx[CpuRegister.R14]:X16} r15=0x{ctx[CpuRegister.R15]:X16}");
+        Log.Trace(
+  $"usleep#{count}: usec={micros} ret=0x{returnRip:X16} caller={callerReturnText} thread=0x{thread:X16} fiber=0x{fiber:X16} rbx=0x{rbx:X16} lock@+F78=0x{lockAddress:X16}:{lockText} r12=0x{r12:X16} scheduler@+8={schedulerText} r13=0x{r13:X16}:{waitValueText} r14=0x{ctx[CpuRegister.R14]:X16} r15=0x{ctx[CpuRegister.R15]:X16}"
+);
 
         if (count % 100000 == 0 &&
             _traceGuestThreads &&
@@ -182,8 +194,8 @@ public static class KernelRuntimeCompatExports
         {
             foreach (var snapshot in scheduler.SnapshotThreads())
             {
-                Console.Error.WriteLine(
-                    $"[LOADER][TRACE] guest_thread.snapshot handle=0x{snapshot.ThreadHandle:X16} name='{snapshot.Name}' " +
+                Log.Trace(
+                    guest_thread.snapshot handle=0x{snapshot.ThreadHandle:X16} name='{snapshot.Name}' " +
                     $"state={snapshot.State} imports={snapshot.ImportCount} nid={snapshot.LastImportNid ?? "none"} " +
                     $"ret=0x{snapshot.LastReturnRip:X16} block={snapshot.BlockReason ?? "none"}");
             }
@@ -414,14 +426,9 @@ public static class KernelRuntimeCompatExports
 
     private static void TraceProcParam(CpuContext ctx, ulong address)
     {
-        if (!string.Equals(Environment.GetEnvironmentVariable("SHARPEMU_LOG_PROC_PARAM"), "1", StringComparison.Ordinal))
-        {
-            return;
-        }
-
         if (address == 0)
         {
-            Console.Error.WriteLine("[LOADER][TRACE] proc_param: address=0");
+            Log.Trace("proc_param: address=0");
             return;
         }
 
@@ -429,16 +436,16 @@ public static class KernelRuntimeCompatExports
         var buffer = GC.AllocateUninitializedArray<byte>(dumpSize);
         if (!ctx.Memory.TryRead(address, buffer))
         {
-            Console.Error.WriteLine($"[LOADER][TRACE] proc_param: address=0x{address:X16} unreadable");
+            Log.Trace($"proc_param: address=0x{address:X16} unreadable");
             return;
         }
 
-        Console.Error.WriteLine($"[LOADER][TRACE] proc_param: address=0x{address:X16} size=0x{dumpSize:X}");
+        Log.Trace($"proc_param: address=0x{address:X16} size=0x{dumpSize:X}");
         for (var offset = 0; offset < dumpSize; offset += 16)
         {
             var slice = buffer.AsSpan(offset, 16);
             var hex = Convert.ToHexString(slice);
-            Console.Error.WriteLine($"[LOADER][TRACE] proc_param[{offset:X3}]: {hex}");
+            Log.Trace($"proc_param[{offset:X3}]: {hex}");
         }
 
         TraceProcParamPointers(ctx, address, buffer);
@@ -446,11 +453,6 @@ public static class KernelRuntimeCompatExports
 
     private static void TraceProcParamPointers(CpuContext ctx, ulong baseAddress, ReadOnlySpan<byte> buffer)
     {
-        if (!string.Equals(Environment.GetEnvironmentVariable("SHARPEMU_LOG_PROC_PARAM_PTRS"), "1", StringComparison.Ordinal))
-        {
-            return;
-        }
-
         if (buffer.Length < 0x50)
         {
             return;
@@ -459,7 +461,7 @@ public static class KernelRuntimeCompatExports
         for (var offset = 0x20; offset <= 0x48; offset += 8)
         {
             var ptr = BinaryPrimitives.ReadUInt64LittleEndian(buffer.Slice(offset, 8));
-            Console.Error.WriteLine($"[LOADER][TRACE] proc_param.ptr@{offset:X2}: 0x{ptr:X16}");
+            Log.Trace($"proc_param.ptr@{offset:X2}: 0x{ptr:X16}");
             if (ptr == 0)
             {
                 continue;
@@ -476,13 +478,13 @@ public static class KernelRuntimeCompatExports
 
         if (TryReadUtf8CString(ctx, address, maxAsciiBytes, out var asciiValue))
         {
-            Console.Error.WriteLine($"[LOADER][TRACE] proc_param.ptr.target ascii@0x{address:X16}: \"{asciiValue}\"");
+            Log.Trace($"proc_param.ptr.target ascii@0x{address:X16}: \"{asciiValue}\"");
             return;
         }
 
         if (TryReadUtf16CString(ctx, address, maxWideChars, out var wideValue))
         {
-            Console.Error.WriteLine($"[LOADER][TRACE] proc_param.ptr.target wide@0x{address:X16}: \"{wideValue}\"");
+            Log.Trace($"proc_param.ptr.target wide@0x{address:X16}: \"{wideValue}\"");
             return;
         }
 
@@ -490,12 +492,12 @@ public static class KernelRuntimeCompatExports
         if (ctx.Memory.TryRead(address, preview))
         {
             var hex = Convert.ToHexString(preview);
-            Console.Error.WriteLine($"[LOADER][TRACE] proc_param.ptr.target hex@0x{address:X16}: {hex}");
+            Log.Trace($"proc_param.ptr.target hex@0x{address:X16}: {hex}");
             TraceProcParamEmbeddedPointers(ctx, address, preview);
         }
         else
         {
-            Console.Error.WriteLine($"[LOADER][TRACE] proc_param.ptr.target unreadable@0x{address:X16}");
+            Log.Trace($"proc_param.ptr.target unreadable@0x{address:X16}");
         }
     }
 
@@ -610,7 +612,9 @@ public static class KernelRuntimeCompatExports
 
             if (TryReadUtf8CString(ctx, candidate, 256, out var ascii))
             {
-                Console.Error.WriteLine($"[LOADER][TRACE] proc_param.ptr.embed@0x{baseAddress:X16}+0x{offset:X2} -> 0x{candidate:X16} ascii \"{ascii}\"");
+                Log.Trace(
+  $"proc_param.ptr.embed@0x{baseAddress:X16}+0x{offset:X2} -> 0x{candidate:X16} ascii \"{ascii}\""
+);
                 if (++found >= maxCandidates)
                 {
                     return;
@@ -620,7 +624,9 @@ public static class KernelRuntimeCompatExports
 
             if (TryReadUtf16CString(ctx, candidate, 128, out var wide))
             {
-                Console.Error.WriteLine($"[LOADER][TRACE] proc_param.ptr.embed@0x{baseAddress:X16}+0x{offset:X2} -> 0x{candidate:X16} wide \"{wide}\"");
+                Log.Trace(
+  $"proc_param.ptr.embed@0x{baseAddress:X16}+0x{offset:X2} -> 0x{candidate:X16} wide \"{wide}\""
+);
                 if (++found >= maxCandidates)
                 {
                     return;
@@ -722,8 +728,7 @@ public static class KernelRuntimeCompatExports
         var bitMask = _gpoStateBits;
         if (string.Equals(Environment.GetEnvironmentVariable("SHARPEMU_LOG_ALLOC_IMPORTS"), "1", StringComparison.Ordinal))
         {
-            Console.Error.WriteLine(
-                $"[LOADER][TRACE] get_gpi: mask=0x{bitMask:X8}");
+            Log.Trace($"get_gpi: mask=0x{bitMask:X8}");
         }
         ctx[CpuRegister.Rax] = bitMask;
         return (int)OrbisGen2Result.ORBIS_GEN2_OK;
@@ -787,8 +792,7 @@ public static class KernelRuntimeCompatExports
 
         if (ShouldTraceVirtualMemory())
         {
-            Console.Error.WriteLine(
-                $"[LOADER][TRACE] reserve_virtual_range: req=0x{requestedAddress:X16} desired=0x{desiredAddress:X16} mapped=0x{mappedAddress:X16} len=0x{length:X16} flags=0x{flags:X8} align=0x{effectiveAlignment:X16} already_backed={alreadyBacked} reused={reusedReleasedRange}");
+            Log.Trace($"reserve_virtual_range: req=0x{requestedAddress:X16} desired=0x{desiredAddress:X16} mapped=0x{mappedAddress:X16} len=0x{length:X16} flags=0x{flags:X8} align=0x{effectiveAlignment:X16}");
         }
 
         if (!ctx.TryWriteUInt64(inOutAddressPointer, mappedAddress))
@@ -916,12 +920,10 @@ public static class KernelRuntimeCompatExports
             _prtApertures[apertureId] = (apertureBase, apertureSize);
         }
 
-        Console.Error.WriteLine(
-            $"[LOADER][TRACE] set_prt_aperture: id={apertureId} base=0x{apertureBase:X16} size=0x{apertureSize:X16}");
+        Log.Trace($"set_prt_aperture: id={apertureId} base=0x{apertureBase:X16} size=0x{apertureSize:X16}");
         if (string.Equals(Environment.GetEnvironmentVariable("SHARPEMU_LOG_ALLOC_IMPORTS"), "1", StringComparison.Ordinal))
         {
-            Console.Error.WriteLine(
-                $"[LOADER][TRACE] set_prt_aperture raw: rdi=0x{rawId:X16} rsi=0x{apertureBase:X16} rdx=0x{apertureSize:X16} rcx=0x{ctx[CpuRegister.Rcx]:X16} r8=0x{ctx[CpuRegister.R8]:X16} r9=0x{ctx[CpuRegister.R9]:X16}");
+            Log.Trace($"set_prt_aperture raw: rdi=0x{rawId:X16} rsi=0x{apertureBase:X16} rdx=0x{apertureSize:X16} rcx=0x{ctx[CpuRegister.Rcx]:X16} r8=0x{ctx[CpuRegister.R8]:X16} r9=0x{ctx[CpuRegister.R9]:X16}");
         }
         ctx[CpuRegister.Rax] = 0;
         return (int)OrbisGen2Result.ORBIS_GEN2_OK;
@@ -1171,8 +1173,7 @@ public static class KernelRuntimeCompatExports
     public static int StackCheckFail(CpuContext ctx)
     {
         var count = Interlocked.Increment(ref _stackChkFailCount);
-        Console.Error.WriteLine(
-            $"[LOADER][ERROR] __stack_chk_fail#{count}: rip=0x{ctx.Rip:X16} rdi=0x{ctx[CpuRegister.Rdi]:X16}");
+        Log.Error($"__stack_chk_fail#{count}: rip=0x{ctx.Rip:X16} rdi=0x{ctx[CpuRegister.Rdi]:X16}");
         var result = (int)OrbisGen2Result.ORBIS_GEN2_ERROR_CPU_TRAP;
         GuestThreadExecution.RequestCurrentEntryExit("__stack_chk_fail", result);
         ctx[CpuRegister.Rax] = unchecked((ulong)result);
@@ -1264,9 +1265,7 @@ public static class KernelRuntimeCompatExports
             KernelModuleRegistry.CompleteModuleStart(handle, started);
             if (!started)
             {
-                Console.Error.WriteLine(
-                    $"[LOADER][ERROR] sceKernelLoadStartModule failed to start '{moduleToStart.Name}' " +
-                    $"at 0x{moduleToStart.InitEntryPoint:X16}: {startError ?? "guest scheduler unavailable"}");
+            Log.Error($"sceKernelLoadStartModule failed to start '{moduleToStart.Name}' at 0x{moduleToStart.InitEntryPoint:X16}: {startError ?? "guest scheduler unavailable"}");
                 var error = (int)OrbisGen2Result.ORBIS_GEN2_ERROR_CPU_TRAP;
                 if (resultAddress != 0)
                 {
@@ -1277,9 +1276,7 @@ public static class KernelRuntimeCompatExports
                 return error;
             }
 
-            Console.Error.WriteLine(
-                $"[LOADER][INFO] sceKernelLoadStartModule started '{moduleToStart.Name}' " +
-                $"at 0x{moduleToStart.InitEntryPoint:X16}");
+            Log.Info($"sceKernelLoadStartModule started '{moduleToStart.Name}' at 0x{moduleToStart.InitEntryPoint:X16}");
         }
 
         ctx[CpuRegister.Rax] = unchecked((uint)handle);
@@ -1854,7 +1851,7 @@ public static class KernelRuntimeCompatExports
 
     private static void TraceKernelTscFrequency(string source, ulong frequencyHz)
     {
-        Console.Error.WriteLine($"[LOADER][INFO] Kernel TSC frequency: {frequencyHz} Hz ({source})");
+        Log.Info($"Kernel TSC frequency: {frequencyHz} Hz ({source})");
     }
 
     private static bool TryResolveCpuidTscFrequency(out ulong frequencyHz)
@@ -2050,117 +2047,5 @@ public static class KernelRuntimeCompatExports
     private static bool ShouldTraceVirtualMemory()
     {
         return string.Equals(Environment.GetEnvironmentVariable("SHARPEMU_LOG_VIRTUAL_MEMORY"), "1", StringComparison.Ordinal);
-    }
-    [SysAbiExport(
-        Nid = "QvsZxomvUHs",
-        ExportName = "sceKernelNanosleep",
-        Target = Generation.Gen4 | Generation.Gen5,
-        LibraryName = "libKernel")]
-    public static int KernelNanosleep(CpuContext ctx) => NanosleepCore(ctx, posix: false);
-
-    [SysAbiExport(
-        Nid = "yS8U2TGCe1A",
-        ExportName = "nanosleep",
-        Target = Generation.Gen4 | Generation.Gen5,
-        LibraryName = "libKernel")]
-    public static int PosixNanosleep(CpuContext ctx) => NanosleepCore(ctx, posix: true);
-
-    private static int NanosleepCore(CpuContext ctx, bool posix)
-    {
-        const int eFault = 14;
-        const int eInvalid = 22;
-        var requestAddress = ctx[CpuRegister.Rdi];
-        var remainAddress = ctx[CpuRegister.Rsi];
-
-        if (requestAddress == 0)
-        {
-            return NanosleepFailure(ctx, posix, eInvalid, OrbisGen2Result.ORBIS_GEN2_ERROR_INVALID_ARGUMENT);
-        }
-
-        Span<byte> timespecBuffer = stackalloc byte[16];
-        if (!ctx.Memory.TryRead(requestAddress, timespecBuffer))
-        {
-            return NanosleepFailure(ctx, posix, eFault, OrbisGen2Result.ORBIS_GEN2_ERROR_MEMORY_FAULT);
-        }
-
-        var tvSec = BinaryPrimitives.ReadInt64LittleEndian(timespecBuffer);
-        var tvNsec = BinaryPrimitives.ReadInt64LittleEndian(timespecBuffer[sizeof(long)..]);
-        if (tvSec < 0 || tvNsec < 0 || tvNsec >= 1_000_000_000L)
-        {
-            return NanosleepFailure(ctx, posix, eInvalid, OrbisGen2Result.ORBIS_GEN2_ERROR_INVALID_ARGUMENT);
-        }
-
-        if (tvSec == 0 && tvNsec == 0)
-        {
-            WriteRemainingTime(ctx, remainAddress, 0, 0);
-            ctx[CpuRegister.Rax] = 0;
-            return (int)OrbisGen2Result.ORBIS_GEN2_OK;
-        }
-
-        GuestThreadExecution.Scheduler?.Pump(ctx, posix ? "nanosleep" : "sceKernelNanosleep");
-        var totalTicks = tvSec * TimeSpan.TicksPerSecond + Math.Max(tvNsec / 100L, 1L);
-        try
-        {
-            Thread.Sleep(TimeSpan.FromTicks(totalTicks));
-        }
-        catch (ArgumentOutOfRangeException)
-        {
-            Thread.Sleep(TimeSpan.FromMilliseconds(int.MaxValue));
-        }
-
-        WriteRemainingTime(ctx, remainAddress, 0, 0);
-        ctx[CpuRegister.Rax] = 0;
-        return (int)OrbisGen2Result.ORBIS_GEN2_OK;
-    }
-
-    private static int NanosleepFailure(
-        CpuContext ctx,
-        bool posix,
-        int errnoValue,
-        OrbisGen2Result sceResult)
-    {
-        if (posix)
-        {
-            TrySetErrno(ctx, errnoValue);
-            ctx[CpuRegister.Rax] = unchecked((ulong)(-1L));
-        }
-        else
-        {
-            ctx[CpuRegister.Rax] = unchecked((ulong)errnoValue);
-        }
-
-        return (int)sceResult;
-    }
-
-    private static void WriteRemainingTime(CpuContext ctx, ulong remainAddress, long seconds, long nanoseconds)
-    {
-        if (remainAddress == 0)
-        {
-            return;
-        }
-
-        Span<byte> remainBuffer = stackalloc byte[16];
-        BinaryPrimitives.WriteInt64LittleEndian(remainBuffer, seconds);
-        BinaryPrimitives.WriteInt64LittleEndian(remainBuffer[sizeof(long)..], nanoseconds);
-        ctx.Memory.TryWrite(remainAddress, remainBuffer);
-    }
-
-    [SysAbiExport(
-        Nid = "QcteRwbsnV0",
-        ExportName = "usleep",
-        Target = Generation.Gen4 | Generation.Gen5,
-        LibraryName = "libKernel")]
-    public static int PosixUsleep(CpuContext ctx) => KernelUsleep(ctx);
-
-    [SysAbiExport(
-        Nid = "HoLVWNanBBc",
-        ExportName = "getpid",
-        Target = Generation.Gen4 | Generation.Gen5,
-        LibraryName = "libKernel")]
-    public static int GetProcessId(CpuContext ctx)
-    {
-        var processId = Environment.ProcessId;
-        ctx[CpuRegister.Rax] = unchecked((uint)processId);
-        return processId;
     }
 }

@@ -1,6 +1,8 @@
 // Copyright (C) 2026 SharpEmu Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+using SharpEmu.Logging;
+
 namespace SharpEmu.HLE;
 
 /// <summary>
@@ -9,6 +11,7 @@ namespace SharpEmu.HLE;
 /// </summary>
 public static class HostSessionControl
 {
+    private static readonly SharpEmuLogger Log = SharpEmuLog.For("HLE.Session");
     private static Action<string>? _shutdownHandler;
     private static string? _pendingShutdownReason;
     private static int _shutdownRequested;
@@ -95,8 +98,7 @@ public static class HostSessionControl
         }
         catch (Exception exception)
         {
-            Console.Error.WriteLine(
-                $"[LOADER][WARN] Host shutdown handler failed: {exception.Message}");
+            Log.Warn($"Host shutdown handler failed: {exception.Message}");
         }
     }
 }

@@ -6,11 +6,13 @@ using System.Buffers;
 using System.Buffers.Binary;
 using System.Collections.Concurrent;
 using System.Threading;
+using SharpEmu.Logging;
 
 namespace SharpEmu.Libs.Kernel;
 
 public static class KernelEventQueueCompatExports
 {
+    private static readonly SharpEmuLogger Log = SharpEmuLog.For("Libs.Kernel");
     private const int KernelEventSize = 0x20;
     public const short KernelEventFilterGraphics = -14;
     public const short KernelEventFilterUser = -11;
@@ -36,9 +38,6 @@ public static class KernelEventQueueCompatExports
         short Filter,
         ulong UserData);
 
-    // Grow-only ring buffer standing in for LinkedList<KernelQueuedEvent>, which
-    // allocated a node per enqueue — steady churn at one enqueue per vblank/flip edge
-    // per registered queue. Mutated only under _eventQueueGate.
     private sealed class KernelEventDeque
     {
         private KernelQueuedEvent[] _items = new KernelQueuedEvent[4];
@@ -860,8 +859,6 @@ public static class KernelEventQueueCompatExports
             return 0;
         }
 
-        // Engines wait on the vblank/flip equeue every frame, so the delivery buffer
-        // (usually a single event) comes from the pool instead of a per-call array.
         KernelQueuedEvent[] events;
         int count;
         lock (_eventQueueGate)
@@ -919,10 +916,8 @@ public static class KernelEventQueueCompatExports
             return;
         }
 
-        var returnRip = 0UL;
-        _ = ctx.TryReadUInt64(ctx[CpuRegister.Rsp], out returnRip);
-        Console.Error.WriteLine(
-            $"[LOADER][TRACE] equeue.{operation}: handle=0x{handle:X16} rsi=0x{ctx[CpuRegister.Rsi]:X16} rdx=0x{ctx[CpuRegister.Rdx]:X16} ret=0x{returnRip:X16}");
+        _ = ctx.TryReadUInt64(ctx[CpuRegister.Rsp], out ulong returnRip);
+        Log.Trace($"equeue.{operation}: thread=0x{KernelPthreadState.GetCurrentThreadHandle():X16} handle=0x{handle:X16} rsi=0x{ctx[CpuRegister.Rsi]:X16} rdx=0x{ctx[CpuRegister.Rdx]:X16} ret=0x{returnRip:X16}");
     }
 
     private static bool TryWriteUInt32(CpuContext ctx, ulong address, uint value)

@@ -161,38 +161,6 @@ public sealed class Localization
         return null;
     }
 
-    private bool TryLoadLooseFile(string code)
-    {
-        try
-        {
-            var path = Path.Combine(LanguagesDirectory, $"{code}.json");
-            return File.Exists(path) && TryLoad(code, File.ReadAllText(path));
-        }
-        catch (Exception)
-        {
-            return false;
-        }
-    }
-
-    private bool TryLoadEmbedded(string code)
-    {
-        try
-        {
-            using var stream = OpenEmbeddedLanguageStream(code);
-            if (stream is null)
-            {
-                return false;
-            }
-
-            using var reader = new StreamReader(stream);
-            return TryLoad(code, reader.ReadToEnd());
-        }
-        catch (Exception)
-        {
-            return false;
-        }
-    }
-
     private bool TryLoadLooseFile(string code, out Dictionary<string, string> result)
     {
         result = new Dictionary<string, string>();
@@ -241,16 +209,5 @@ public sealed class Localization
 
         result = loaded;
         return true;
-    }
-    
-    private bool TryLoad(string code, string json)
-    {
-        if (TryLoad(json, out var dict))
-        {
-            _strings = dict;
-            CurrentCode = code;
-            return true;
-        }
-        return false;
     }
 }

@@ -3,6 +3,7 @@
 
 using System.Runtime.InteropServices;
 using SharpEmu.HLE.Host;
+using SharpEmu.Logging;
 
 namespace SharpEmu.Core.Cpu.Native.Windows;
 
@@ -16,6 +17,7 @@ namespace SharpEmu.Core.Cpu.Native.Windows;
 internal sealed unsafe partial class WindowsFaultHandling : IHostFaultHandling
 {
     private readonly IHostMemory _memory;
+    private static readonly SharpEmuLogger Log = SharpEmuLog.For("FaultHandling");
 
     public WindowsFaultHandling(IHostMemory memory)
     {
@@ -141,7 +143,7 @@ internal sealed unsafe partial class WindowsFaultHandling : IHostFaultHandling
 
         if (!_memory.Protect((ulong)ptr, stubSize, HostPageProtection.ReadExecute, out _))
         {
-            Console.Error.WriteLine($"[LOADER][ERROR] VirtualProtect failed for exception handler trampoline at 0x{(nint)ptr:X16}");
+            Log.Error($"VirtualProtect failed for exception handler trampoline at 0x{(nint)ptr:X16}");
             _ = _memory.Free((ulong)ptr);
             return 0;
         }

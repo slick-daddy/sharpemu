@@ -4,11 +4,13 @@
 using SharpEmu.HLE;
 using System.Buffers.Binary;
 using System.Threading;
+using SharpEmu.Logging;
 
 namespace SharpEmu.Libs.CommonDialog;
 
 public static class MsgDialogExports
 {
+    private static readonly SharpEmuLogger Log = SharpEmuLog.For("Libs.CommonDialog");
     private const int StatusNone = 0;
     private const int StatusInitialized = 1;
     private const int StatusRunning = 2;
@@ -95,7 +97,7 @@ public static class MsgDialogExports
     // level deep, then a second level for nested sub-param structs.
     private static void LogDialogMessage(CpuContext ctx, ulong paramAddress)
     {
-        Console.Error.WriteLine($"[LOADER][INFO] sceMsgDialogOpen: param=0x{paramAddress:X12}");
+        Log.Info($"sceMsgDialogOpen: param=0x{paramAddress:X12}");
 
         Span<byte> head = stackalloc byte[0xA0];
         if (ctx.Memory.TryRead(paramAddress, head))
@@ -118,7 +120,9 @@ public static class MsgDialogExports
             var text = TryReadPrintableText(ctx, value);
             if (text is not null)
             {
-                Console.Error.WriteLine($"[LOADER][INFO]   {label}+0x{offset:X2} -> 0x{value:X12} text=\"{text}\"");
+                Log.Info(
+  $"{label}+0x{offset:X2} -> 0x{value:X12} text=\"{text}\""
+);
             }
             else if (chaseNested && ctx.Memory.TryRead(value, nested))
             {

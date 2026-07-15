@@ -3,11 +3,13 @@
 
 using System.Collections.Concurrent;
 using SharpEmu.HLE;
+using SharpEmu.Logging;
 
 namespace SharpEmu.Libs.Network;
 
 public static class SslExports
 {
+    private static readonly SharpEmuLogger Log = SharpEmuLog.For("Libs.Network");
     private const int SslErrorInvalidId = unchecked((int)0x8095F006);
     private const int SslErrorOutOfSize = unchecked((int)0x8095F008);
 
@@ -68,12 +70,6 @@ public static class SslExports
 
     private static void TraceSsl(string operation, int id, ulong arg0)
     {
-        if (!string.Equals(Environment.GetEnvironmentVariable("SHARPEMU_LOG_SSL"), "1", StringComparison.Ordinal))
-        {
-            return;
-        }
-
-        Console.Error.WriteLine(
-            $"[LOADER][TRACE] ssl.{operation} id={id} arg0=0x{arg0:X16}");
+        Log.Trace($"ssl.{operation} id={id} arg0=0x{arg0:X16}");
     }
 }

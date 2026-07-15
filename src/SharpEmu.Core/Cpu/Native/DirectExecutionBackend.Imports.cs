@@ -43,8 +43,8 @@ public sealed partial class DirectExecutionBackend
 		{
 			if (!(GCHandle.FromIntPtr(backendHandle).Target is DirectExecutionBackend directExecutionBackend))
 			{
-				Console.Error.WriteLine(
-					$"[LOADER][ERROR] ImportDispatchGatewayManaged: invalid backend handle 0x{backendHandle:X16}");
+				Log.Error(
+					$"ImportDispatchGatewayManaged: invalid backend handle 0x{backendHandle:X16}");
 				return 18446744071562199042uL;
 			}
 
@@ -60,8 +60,8 @@ public sealed partial class DirectExecutionBackend
 		}
 		catch (Exception ex)
 		{
-			Console.Error.WriteLine(
-				$"[LOADER][ERROR] ImportDispatchGatewayManaged exception: {ex.GetType().Name}: {ex.Message}");
+			Log.Error(
+				$"ImportDispatchGatewayManaged exception: {ex.GetType().Name}: {ex.Message}");
 			return 18446744071562199298uL;
 		}
 	}
@@ -167,7 +167,7 @@ public sealed partial class DirectExecutionBackend
 		int num2 = Volatile.Read(in _rawSentinelRecoveries);
 		if (num2 != _lastReportedRawSentinelRecoveries)
 		{
-			Console.Error.WriteLine($"[LOADER][TRACE] Raw sentinel recoveries: {num2} (last import index={importIndex})");
+			Log.Trace($"Raw sentinel recoveries: {num2} (last import index={importIndex})");
 			_lastReportedRawSentinelRecoveries = num2;
 		}
 		if (importStubEntry.IsLeaf &&
@@ -233,7 +233,7 @@ public sealed partial class DirectExecutionBackend
 				{
 					*(ulong*)(argPackPtr + 96) = num8;
 					num7 = num8;
-					Console.Error.WriteLine($"[LOADER][WARNING] Import#{num}: corrected suspicious return RIP using stack slot +0x{i * 8:X} -> 0x{num7:X16}");
+					Log.Warning($"Import#{num}: corrected suspicious return RIP using stack slot +0x{i * 8:X} -> 0x{num7:X16}");
 					break;
 				}
 			}
@@ -358,31 +358,30 @@ public sealed partial class DirectExecutionBackend
 			{
 				if (flag6)
 				{
-					Console.Error.WriteLine(
-						$"[LOADER][TRACE] Import#{num}: {matchedExport.LibraryName}:{matchedExport.Name} ({importStubEntry.Nid}) " +
+					Log.Trace(
+						$"Import#{num}: {matchedExport.LibraryName}:{matchedExport.Name} ({importStubEntry.Nid}) " +
 						$"rdi=0x{value:X16} rsi=0x{value2:X16} rdx=0x{num3:X16} rcx=0x{num4:X16} ret=0x{num7:X16}");
 				}
 				else
 				{
-					Console.Error.WriteLine($"[LOADER][TRACE] Import#{num}: {matchedExport.LibraryName}:{matchedExport.Name} ({importStubEntry.Nid})");
+					Log.Trace($"Import#{num}: {matchedExport.LibraryName}:{matchedExport.Name} ({importStubEntry.Nid})");
 				}
 			}
 			else
 			{
 				if (flag6)
 				{
-					Console.Error.WriteLine(
-						$"[LOADER][TRACE] Import#{num}: {importStubEntry.Nid} " +
+					Log.Trace(
+						$"Import#{num}: {importStubEntry.Nid} " +
 						$"rdi=0x{value:X16} rsi=0x{value2:X16} rdx=0x{num3:X16} rcx=0x{num4:X16} ret=0x{num7:X16}");
 				}
 				else
 				{
-					Console.Error.WriteLine($"[LOADER][TRACE] Import#{num}: {importStubEntry.Nid}");
+					Log.Trace($"Import#{num}: {importStubEntry.Nid}");
 				}
 			}
 			if (flag6)
 			{
-				Console.Error.Flush();
 			}
 		}
 		if (!flag0 && !isGuestWorker)
@@ -397,39 +396,31 @@ public sealed partial class DirectExecutionBackend
 		}
 		if (importStubEntry.Nid == "8zTFvBIAIN8" && num <= 256)
 		{
-			Console.Error.WriteLine($"[LOADER][TRACE] memset#{num}: dst=0x{cpuContext[CpuRegister.Rdi]:X16} val=0x{cpuContext[CpuRegister.Rsi] & 0xFF:X2} len=0x{cpuContext[CpuRegister.Rdx]:X16} ret=0x{num7:X16}");
+			Log.Trace($"memset#{num}: dst=0x{cpuContext[CpuRegister.Rdi]:X16} val=0x{cpuContext[CpuRegister.Rsi] & 0xFF:X2} len=0x{cpuContext[CpuRegister.Rdx]:X16} ret=0x{num7:X16}");
 		}
 		if (importStubEntry.Nid == "tsvEmnenz48" && num <= 64)
 		{
-			Console.Error.WriteLine($"[LOADER][TRACE] __cxa_atexit#{num}: func=0x{cpuContext[CpuRegister.Rdi]:X16} arg=0x{cpuContext[CpuRegister.Rsi]:X16} dso=0x{cpuContext[CpuRegister.Rdx]:X16} ret=0x{num7:X16}");
+			Log.Trace($"__cxa_atexit#{num}: func=0x{cpuContext[CpuRegister.Rdi]:X16} arg=0x{cpuContext[CpuRegister.Rsi]:X16} dso=0x{cpuContext[CpuRegister.Rdx]:X16} ret=0x{num7:X16}");
 		}
 		if (importStubEntry.Nid == "bzQExy189ZI" || importStubEntry.Nid == "8G2LB+A3rzg")
 		{
-			Console.Error.WriteLine($"[LOADER][TRACE] {importStubEntry.Nid}#{num}: rdi=0x{cpuContext[CpuRegister.Rdi]:X16} rsi=0x{cpuContext[CpuRegister.Rsi]:X16} rdx=0x{cpuContext[CpuRegister.Rdx]:X16} ret=0x{num7:X16}");
+			Log.Trace($"{importStubEntry.Nid}#{num}: rdi=0x{cpuContext[CpuRegister.Rdi]:X16} rsi=0x{cpuContext[CpuRegister.Rsi]:X16} rdx=0x{cpuContext[CpuRegister.Rdx]:X16} ret=0x{num7:X16}");
 		}
 		if (flag6 || flag || flag2 || flag3)
 		{
-			Console.Error.WriteLine($"[LOADER][TRACE] ImportCtx#{num}: nid={importStubEntry.Nid} ret=0x{num7:X16} rdi=0x{cpuContext[CpuRegister.Rdi]:X16} rsi=0x{cpuContext[CpuRegister.Rsi]:X16} rdx=0x{cpuContext[CpuRegister.Rdx]:X16} rcx=0x{cpuContext[CpuRegister.Rcx]:X16}");
+			Log.Trace($"ImportCtx#{num}: nid={importStubEntry.Nid} ret=0x{num7:X16} rdi=0x{cpuContext[CpuRegister.Rdi]:X16} rsi=0x{cpuContext[CpuRegister.Rsi]:X16} rdx=0x{cpuContext[CpuRegister.Rdx]:X16} rcx=0x{cpuContext[CpuRegister.Rcx]:X16}");
 			if (flag6)
 			{
-				Console.Error.WriteLine(
-					$"[LOADER][TRACE] ImportArgs#{num}: " +
-					$"r8=0x{cpuContext[CpuRegister.R8]:X16} r9=0x{cpuContext[CpuRegister.R9]:X16} " +
-					$"stack0=0x{ReadImportStackArgument(argPackPtr, 0):X16} " +
-					$"stack1=0x{ReadImportStackArgument(argPackPtr, 1):X16} " +
-					$"stack2=0x{ReadImportStackArgument(argPackPtr, 2):X16} " +
-					$"stack3=0x{ReadImportStackArgument(argPackPtr, 3):X16} " +
-					$"stack4=0x{ReadImportStackArgument(argPackPtr, 4):X16} " +
-					$"stack5=0x{ReadImportStackArgument(argPackPtr, 5):X16}");
+				Log.Trace($"ImportArgs#{num}: r8=0x{cpuContext[CpuRegister.R8]:X16} r9=0x{cpuContext[CpuRegister.R9]:X16} stack0=0x{ReadImportStackArgument(argPackPtr, 0):X16} stack1=0x{ReadImportStackArgument(argPackPtr, 1):X16} stack2=0x{ReadImportStackArgument(argPackPtr, 2):X16} stack3=0x{ReadImportStackArgument(argPackPtr, 3):X16} stack4=0x{ReadImportStackArgument(argPackPtr, 4):X16} stack5=0x{ReadImportStackArgument(argPackPtr, 5):X16}");
 			}
-			Console.Error.WriteLine($"[LOADER][TRACE] ImportNV#{num}: rbx=0x{value3:X16} rbp=0x{value4:X16} r12=0x{value5:X16} r13=0x{value6:X16} r14=0x{value7:X16} r15=0x{value8:X16}");
+			Log.Trace($"ImportNV#{num}: rbx=0x{value3:X16} rbp=0x{value4:X16} r12=0x{value5:X16} r13=0x{value6:X16} r14=0x{value7:X16} r15=0x{value8:X16}");
 			if (flag3)
 			{
 				ulong num9 = cpuContext[CpuRegister.Rsp];
 				if (cpuContext.TryReadUInt64(num9, out var value9) && cpuContext.TryReadUInt64(num9 + 8, out var value10) && cpuContext.TryReadUInt64(num9 + 16, out var value11) && cpuContext.TryReadUInt64(num9 + 24, out var value12) && cpuContext.TryReadUInt64(num9 + 32, out var value13) && cpuContext.TryReadUInt64(num9 + 40, out var value14) && cpuContext.TryReadUInt64(num9 + 48, out var value15) && cpuContext.TryReadUInt64(num9 + 56, out var value16) && cpuContext.TryReadUInt64(num9 + 64, out var value17))
 				{
-					Console.Error.WriteLine($"[LOADER][TRACE] ImportStackHead#{num}: rsp=0x{num9:X16} [0]=0x{value9:X16} [20]=0x{value13:X16} [40]=0x{value17:X16}");
-					Console.Error.WriteLine($"[LOADER][TRACE] ImportStack#{num}: rsp=0x{num9:X16} [0]=0x{value9:X16} [8]=0x{value10:X16} [10]=0x{value11:X16} [18]=0x{value12:X16} [20]=0x{value13:X16} [28]=0x{value14:X16} [30]=0x{value15:X16} [38]=0x{value16:X16} [40]=0x{value17:X16}");
+					Log.Trace($"ImportStackHead#{num}: rsp=0x{num9:X16} [0]=0x{value9:X16} [20]=0x{value13:X16} [40]=0x{value17:X16}");
+					Log.Trace($"ImportStack#{num}: rsp=0x{num9:X16} [0]=0x{value9:X16} [8]=0x{value10:X16} [10]=0x{value11:X16} [18]=0x{value12:X16} [20]=0x{value13:X16} [28]=0x{value14:X16} [30]=0x{value15:X16} [38]=0x{value16:X16} [40]=0x{value17:X16}");
 				}
 			}
 			if (flag6 && _logImportFrames)
@@ -442,19 +433,18 @@ public sealed partial class DirectExecutionBackend
 			}
 			if (flag3)
 			{
-				Console.Error.Flush();
 			}
 		}
 		if (importStubEntry.Nid == "Ou3iL1abvng")
 		{
 			if (_logStackCheck)
 			{
-				var rbxGuardKnown = TryReadUInt64Compat(value3, out var rbxGuardValue);
-				var r12GuardKnown = TryReadUInt64Compat(value5, out var r12GuardValue);
-				Console.Error.WriteLine(
-					$"[LOADER][TRACE] stack_chk_diag#{num}: ret=0x{num7:X16} " +
-					$"rbx=0x{value3:X16}:{(rbxGuardKnown ? $"0x{rbxGuardValue:X16}" : "?")} " +
-					$"r12=0x{value5:X16}:{(r12GuardKnown ? $"0x{r12GuardValue:X16}" : "?")} " +
+				var savedGuardAddress = value4 >= 0x10 ? value4 - 0x10 : 0;
+				var guardKnown = TryReadUInt64Compat(value3, out var guardValue);
+				var savedKnown = TryReadUInt64Compat(savedGuardAddress, out var savedGuardValue);
+				Log.Trace(
+					$"stack_chk_diag#{num}: ret=0x{num7:X16} guard_ptr=0x{value3:X16} " +
+					$"guard={(guardKnown ? $"0x{guardValue:X16}" : "?")} saved@0x{savedGuardAddress:X16}={(savedKnown ? $"0x{savedGuardValue:X16}" : "?")} " +
 					$"rbp=0x{value4:X16} rsp=0x{((ulong)argPackPtr + 96uL):X16}");
 
 				// Stack-protector layouts vary by compiler and function. Emit the
@@ -474,7 +464,7 @@ public sealed partial class DirectExecutionBackend
 			{
 				byte[] array = new byte[64];
 				Marshal.Copy((nint)(num7 - 32), array, 0, array.Length);
-				Console.Error.WriteLine($"[LOADER][TRACE] __stack_chk_fail return-site @0x{num7:X16}: {BitConverter.ToString(array).Replace("-", " ")}");
+				Log.Trace($"__stack_chk_fail return-site @0x{num7:X16}: {BitConverter.ToString(array).Replace("-", " ")}");
 			}
 			catch
 			{
@@ -514,6 +504,15 @@ public sealed partial class DirectExecutionBackend
 					}
 					orbisGen2Result = (OrbisGen2Result)returnValue;
 				}
+				else if (importStubEntry.Export is { } mismatchedExport)
+				{
+					dispatchResolved = true;
+					orbisGen2Result = OrbisGen2Result.ORBIS_GEN2_ERROR_NOT_IMPLEMENTED;
+					cpuContext[CpuRegister.Rax] = unchecked((ulong)(int)orbisGen2Result);
+					Log.Warn(
+						$"Import#{num} not implemented for generation {cpuContext.TargetGeneration}: " +
+						$"nid={importStubEntry.Nid} targets={mismatchedExport.Target} ret=0x{num7:X16}");
+				}
 				else
 				{
 					dispatchResolved = false;
@@ -547,8 +546,8 @@ public sealed partial class DirectExecutionBackend
 				{
 					DumpIl2CppExceptionDiagnostic(cpuContext, value, num7);
 				}
-				Console.Error.WriteLine(
-					$"[LOADER][WARN] Import#{num} unresolved: nid={importStubEntry.Nid} ret=0x{num7:X16} " +
+				Log.Warn(
+					$"Import#{num} unresolved: nid={importStubEntry.Nid} ret=0x{num7:X16} " +
 					$"rdi=0x{value:X16} rsi=0x{value2:X16} rdx=0x{num3:X16} rcx=0x{num4:X16} r8=0x{num5:X16} r9=0x{num6:X16}");
 				if (importStubEntry.Nid == "L-Q3LEjIbgA")
 				{
@@ -557,21 +556,21 @@ public sealed partial class DirectExecutionBackend
 						int num10 = c;
 						return num10.ToString("X2");
 					}));
-					Console.Error.WriteLine($"[LOADER][WARN] map_direct nid raw len={importStubEntry.Nid.Length} chars=[{value18}]");
+					Log.Warn($"map_direct nid raw len={importStubEntry.Nid.Length} chars=[{value18}]");
 					Delegate function;
 					bool value19 = _moduleManager.TryGetFunction(importStubEntry.Nid, out function);
 					ExportedFunction export2;
 					bool value20 = _moduleManager.TryGetExport(importStubEntry.Nid, out export2);
-					Console.Error.WriteLine($"[LOADER][WARN] map_direct lookup with import nid: function={value19}, export={value20}");
-					Console.Error.WriteLine(_moduleManager.TryGetExport("L-Q3LEjIbgA", out ExportedFunction export3) ? $"[LOADER][WARN] Canonical map_direct exists as {export3.LibraryName}:{export3.Name}, target={export3.Target}, ctx_target={cpuContext.TargetGeneration}" : "[LOADER][WARN] Canonical map_direct export lookup also missing");
+					Log.Warn($"map_direct lookup with import nid: function={value19}, export={value20}");
+					Log.Warn(_moduleManager.TryGetExport("L-Q3LEjIbgA", out ExportedFunction export3) ? $"Canonical map_direct exists as {export3.LibraryName}:{export3.Name}, target={export3.Target}, ctx_target={cpuContext.TargetGeneration}" : "Canonical map_direct export lookup also missing");
 				}
 			}
 			else if (orbisGen2Result != OrbisGen2Result.ORBIS_GEN2_OK)
 			{
 				if (ShouldLogImportResult(importStubEntry.Nid, orbisGen2Result))
 				{
-					Console.Error.WriteLine(
-						$"[LOADER][WARN] Import#{num} result: {orbisGen2Result} ({importStubEntry.Nid}) " +
+					Log.Warn(
+						$"Import#{num} result: {orbisGen2Result} ({importStubEntry.Nid}) " +
 						$"rdi=0x{value:X16} rsi=0x{value2:X16} rdx=0x{num3:X16} rcx=0x{num4:X16} ret=0x{num7:X16}");
 				}
 			}
@@ -600,8 +599,8 @@ public sealed partial class DirectExecutionBackend
 				*(ulong*)(argPackPtr + 96) = unchecked((ulong)transferStub);
 				if (_logFiber)
 				{
-					Console.Error.WriteLine(
-						$"[LOADER][TRACE] fiber.context-transfer rip=0x{transferTarget.Rip:X16} " +
+					Log.Trace(
+						$"fiber.context-transfer rip=0x{transferTarget.Rip:X16} " +
 						$"rsp=0x{transferTarget.Rsp:X16} guest=0x{GuestThreadExecution.CurrentGuestThreadHandle:X16} " +
 						$"fiber=0x{GuestThreadExecution.CurrentFiberAddress:X16}");
 				}
@@ -648,10 +647,9 @@ public sealed partial class DirectExecutionBackend
 			}
 			if (flag || flag2 || flag3)
 			{
-				Console.Error.WriteLine($"[LOADER][TRACE] ImportRet#{num}: nid={importStubEntry.Nid} result={orbisGen2Result} rax=0x{cpuContext[CpuRegister.Rax]:X16}");
+				Log.Trace($"ImportRet#{num}: nid={importStubEntry.Nid} result={orbisGen2Result} rax=0x{cpuContext[CpuRegister.Rax]:X16}");
 				if (flag3)
 				{
-					Console.Error.Flush();
 				}
 			}
 			var guestReturnValue = cpuContext[CpuRegister.Rax];
@@ -683,8 +681,8 @@ public sealed partial class DirectExecutionBackend
 		catch (Exception ex)
 		{
 			LastError = $"HLE dispatch error for {importStubEntry.Nid}: {ex.GetType().Name}: {ex.Message}";
-			Console.Error.WriteLine($"[LOADER][ERROR] {LastError}");
-			Console.Error.WriteLine($"[LOADER][ERROR] {ex.StackTrace}");
+			Log.Error(LastError ?? "null");
+			Log.Error(ex.StackTrace ?? "null");
 			cpuContext[CpuRegister.Rax] = 18446744071562199298uL;
 			if (_activeGuestThreadState is { } failedGuestThreadState)
 			{
@@ -1284,8 +1282,8 @@ public sealed partial class DirectExecutionBackend
 		}
 		if (dispatchIndex % 100000 == 0)
 		{
-			Console.Error.WriteLine(
-				$"[LOADER][TRACE] Import#{dispatchIndex}: {export.LibraryName}:{export.Name} ({importStubEntry.Nid}) " +
+			Log.Trace(
+				$"Import#{dispatchIndex}: {export.LibraryName}:{export.Name} ({importStubEntry.Nid}) " +
 				$"rdi=0x{arg0:X16} rsi=0x{cpuContext[CpuRegister.Rsi]:X16} " +
 				$"rdx=0x{cpuContext[CpuRegister.Rdx]:X16} rcx=0x{cpuContext[CpuRegister.Rcx]:X16} " +
 				$"ret=0x{returnRip:X16}");
@@ -1331,8 +1329,8 @@ public sealed partial class DirectExecutionBackend
 			var returnResult = (OrbisGen2Result)returnValue;
 			if (ShouldLogImportResult(importStubEntry.Nid, returnResult))
 			{
-				Console.Error.WriteLine(
-					$"[LOADER][WARN] Import#{dispatchIndex} result: {returnResult} ({importStubEntry.Nid}) " +
+				Log.Warn(
+					$"Import#{dispatchIndex} result: {returnResult} ({importStubEntry.Nid}) " +
 					$"rdi=0x{arg0:X16} rsi=0x{cpuContext[CpuRegister.Rsi]:X16} " +
 					$"rdx=0x{cpuContext[CpuRegister.Rdx]:X16} rcx=0x{cpuContext[CpuRegister.Rcx]:X16} " +
 					$"r8=0x{cpuContext[CpuRegister.R8]:X16} r9=0x{cpuContext[CpuRegister.R9]:X16} " +
@@ -1619,8 +1617,8 @@ public sealed partial class DirectExecutionBackend
 			var symbol = TryFormatNearestRuntimeSymbol(returnRip, out var formatted)
 				? $" [{formatted}]"
 				: string.Empty;
-			Console.Error.WriteLine(
-				$"[LOADER][TRACE] ImportFrame#{dispatchIndex}.{i}: rbp=0x{frame:X16} ret=0x{returnRip:X16}{symbol} next=0x{next:X16}");
+			Log.Trace(
+				$"ImportFrame#{dispatchIndex}.{i}: rbp=0x{frame:X16} ret=0x{returnRip:X16}{symbol} next=0x{next:X16}");
 			if (next <= frame || next - frame > 0x100000)
 			{
 				break;
@@ -1647,8 +1645,33 @@ public sealed partial class DirectExecutionBackend
 		}
 		ActiveForcedGuestExit = true;
 		LastError = $"Detected repeating import loop at import#{dispatchIndex} ({nid}) and forced guest exit.";
-		Console.Error.WriteLine($"[LOADER][ERROR] Import-loop guard fired at import#{dispatchIndex}: nid={nid} ret=0x{returnRip:X16} -> host_exit=0x{num:X16}");
+		Log.Error($"Import-loop guard fired at import#{dispatchIndex}: nid={nid} ret=0x{returnRip:X16} -> host_exit=0x{num:X16}");
 		DumpRecentImportTrace();
+		return true;
+	}
+
+	private unsafe bool TryAbortGuestForHostShutdown(nint argPackPtr, long dispatchIndex, ulong returnRip)
+	{
+		ulong hostExit = ActiveEntryReturnSentinelRip;
+		if (hostExit < 65536 || !TryPatchActiveGuestReturnSlot(hostExit))
+		{
+			return false;
+		}
+		try
+		{
+			*(ulong*)(argPackPtr + 96) = hostExit;
+		}
+		catch
+		{
+			return false;
+		}
+		ActiveForcedGuestExit = true;
+		if (string.IsNullOrWhiteSpace(LastError))
+		{
+			LastError = "Host shutdown requested.";
+		}
+		Log.Info(
+			$"Guest unwind for host shutdown at import#{dispatchIndex} ret=0x{returnRip:X16} -> host_exit=0x{hostExit:X16}");
 		return true;
 	}
 
@@ -1667,8 +1690,8 @@ public sealed partial class DirectExecutionBackend
 		{
 			return false;
 		}
-		Console.Error.WriteLine(
-			$"[LOADER][INFO] Guest entry exit at import#{dispatchIndex}: nid={nid} ret=0x{returnRip:X16} reason={reason} value=0x{value:X16}");
+		Log.Info(
+			$"Guest entry exit at import#{dispatchIndex}: nid={nid} ret=0x{returnRip:X16} reason={reason} value=0x{value:X16}");
 		return true;
 	}
 
@@ -1692,8 +1715,8 @@ public sealed partial class DirectExecutionBackend
 		ActiveGuestThreadYieldReason = string.IsNullOrWhiteSpace(reason) ? nid : reason;
 		if (_logGuestThreads)
 		{
-			Console.Error.WriteLine(
-				$"[LOADER][INFO] Guest thread yield at import#{dispatchIndex}: nid={nid} ret=0x{returnRip:X16} reason={ActiveGuestThreadYieldReason}");
+			Log.Info(
+				$"Guest thread yield at import#{dispatchIndex}: nid={nid} ret=0x{returnRip:X16} reason={ActiveGuestThreadYieldReason}");
 		}
 		return true;
 	}
@@ -1946,10 +1969,10 @@ public sealed partial class DirectExecutionBackend
 		List<string> list = GetRecentDistinctImportPrelude(maxCount: 5, skipNid: "j4ViWNHEgww");
 		if (list.Count == 0)
 		{
-			Console.Error.WriteLine($"[LOADER][WARNING] Import#{dispatchIndex}: detected strlen burst (count={_consecutiveStrlenImports}) ret=0x{returnRip:X16}; no prelude NIDs recorded.");
+			Log.Warning($"Import#{dispatchIndex}: detected strlen burst (count={_consecutiveStrlenImports}) ret=0x{returnRip:X16}; no prelude NIDs recorded.");
 			return;
 		}
-		Console.Error.WriteLine($"[LOADER][WARNING] Import#{dispatchIndex}: detected strlen burst (count={_consecutiveStrlenImports}) ret=0x{returnRip:X16}; last5_nids={string.Join(" -> ", list)}");
+		Log.Warning($"Import#{dispatchIndex}: detected strlen burst (count={_consecutiveStrlenImports}) ret=0x{returnRip:X16}; last5_nids={string.Join(" -> ", list)}");
 	}
 
 	private List<string> GetRecentDistinctImportPrelude(int maxCount, string skipNid)
@@ -2048,21 +2071,343 @@ public sealed partial class DirectExecutionBackend
 
 	private static string ComputePsNid(string symbolName)
 	{
-		ReadOnlySpan<byte> salt =
-		[
-			0x51, 0x8D, 0x64, 0xA6, 0x35, 0xDE, 0xD8, 0xC1,
-			0xE6, 0xB0, 0x39, 0xB1, 0xC3, 0xE5, 0x52, 0x30,
-		];
-		var nameBytes = Encoding.UTF8.GetBytes(symbolName);
-		var input = new byte[nameBytes.Length + salt.Length];
-		nameBytes.CopyTo(input, 0);
-		salt.CopyTo(input.AsSpan(nameBytes.Length));
-		Span<byte> digest = stackalloc byte[20];
-		SHA1.HashData(input, digest);
-		var value = BinaryPrimitives.ReadUInt64LittleEndian(digest);
-		Span<byte> bigEndianValue = stackalloc byte[sizeof(ulong)];
-		BinaryPrimitives.WriteUInt64BigEndian(bigEndianValue, value);
-		return Convert.ToBase64String(bigEndianValue).TrimEnd('=').Replace('/', '-');
+		guestAddress = 0;
+		if (string.IsNullOrWhiteSpace(identifier))
+		{
+			return false;
+		}
+
+		var importEntries = _importEntries;
+		for (var i = 0; i < importEntries.Length; i++)
+		{
+			var entry = importEntries[i];
+			if (!ImportStubEntryMatchesIdentifier(entry, identifier))
+			{
+				continue;
+			}
+
+			if (entry.Address >= 0x10000)
+			{
+				guestAddress = entry.Address;
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	private static bool ImportStubEntryMatchesIdentifier(in ImportStubEntry entry, string identifier)
+	{
+		if (string.Equals(entry.Nid, identifier, StringComparison.Ordinal))
+		{
+			return true;
+		}
+
+		if (entry.Export is not { } export)
+		{
+			return false;
+		}
+
+		return string.Equals(export.Name, identifier, StringComparison.Ordinal) ||
+			string.Equals(export.Nid, identifier, StringComparison.Ordinal);
+	}
+
+	private static bool IsKernelDynlibDlsymIdentifier(string identifier)
+	{
+		return string.Equals(identifier, "sceKernelDlsym", StringComparison.Ordinal) ||
+			string.Equals(identifier, KernelDynlibDlsymAerolibNid, StringComparison.Ordinal) ||
+			string.Equals(identifier, RuntimeStubNids.KernelDynlibDlsym, StringComparison.Ordinal);
+	}
+
+	private bool TryResolveLazyDispatchTarget(
+		string symbolName,
+		bool hasAerolibSymbol,
+		in SysAbiSymbol hleSymbol,
+		out string dispatchNid,
+		out ExportedFunction? export)
+	{
+		export = null;
+		dispatchNid = string.Empty;
+
+		if (IsKernelDynlibDlsymIdentifier(symbolName))
+		{
+			dispatchNid = KernelDynlibDlsymAerolibNid;
+			_ = _moduleManager.TryGetExport(dispatchNid, out export);
+			return true;
+		}
+
+		if (!hasAerolibSymbol)
+		{
+			return false;
+		}
+
+		if (HleDataSymbols.TryGetAddress(hleSymbol.Nid, out _))
+		{
+			return false;
+		}
+
+		if (_moduleManager.TryGetExport(hleSymbol.Nid, out export))
+		{
+			dispatchNid = hleSymbol.Nid;
+			return true;
+		}
+
+		return false;
+	}
+
+	private bool TryGetOrCreateLazyImportStub(
+		string dispatchNid,
+		string symbolName,
+		SysAbiSymbol? hleSymbol,
+		ExportedFunction? export,
+		out ulong guestAddress)
+	{
+		guestAddress = 0;
+		if (string.IsNullOrWhiteSpace(dispatchNid))
+		{
+			return false;
+		}
+
+		lock (_lazyDlsymStubGate)
+		{
+			if (TryGetCachedLazyDlsymAddress(dispatchNid, symbolName, out guestAddress))
+			{
+				return true;
+			}
+
+			if (!EnsureLazyImportStubPoolMapped())
+			{
+				LogLazyImportStubMaterializationFailure(
+					"import stub region unresolved",
+					dispatchNid,
+					symbolName);
+				return false;
+			}
+
+			if (!TryAllocateLazyImportStubSlot(out guestAddress))
+			{
+				LogLazyImportStubMaterializationFailure(
+					"lazy import stub pool exhausted",
+					dispatchNid,
+					symbolName);
+				return false;
+			}
+
+			var previousEntries = _importEntries;
+			var importIndex = previousEntries.Length;
+			var newEntries = new ImportStubEntry[importIndex + 1];
+			if (importIndex > 0)
+			{
+				Array.Copy(previousEntries, newEntries, importIndex);
+			}
+
+			newEntries[importIndex] = new ImportStubEntry(guestAddress, dispatchNid, export);
+
+			var hostTrampoline = CreateImportHandlerTrampoline(importIndex);
+			if (hostTrampoline == 0 ||
+				!PatchImportStub((nint)(long)guestAddress, hostTrampoline))
+			{
+				guestAddress = 0;
+				LogLazyImportStubMaterializationFailure(
+					"failed to patch lazy import stub trampoline",
+					dispatchNid,
+					symbolName);
+				return false;
+			}
+
+			_importEntries = newEntries;
+
+			RegisterDlsymRuntimeSymbolKeys(symbolName, dispatchNid, hleSymbol, guestAddress);
+			return true;
+		}
+	}
+
+	private bool TryGetCachedLazyDlsymAddress(string dispatchNid, string symbolName, out ulong guestAddress)
+	{
+		if (_lazyDlsymStubCache.TryGetValue(dispatchNid, out guestAddress) ||
+			_lazyDlsymStubCache.TryGetValue(symbolName, out guestAddress))
+		{
+			return guestAddress >= 0x10000;
+		}
+
+		return false;
+	}
+
+	private void RegisterDlsymRuntimeSymbolKeys(
+		string symbolName,
+		string dispatchNid,
+		SysAbiSymbol? hleSymbol,
+		ulong guestAddress)
+	{
+		RegisterDlsymRuntimeSymbolKey(symbolName, guestAddress);
+		RegisterDlsymRuntimeSymbolKey(dispatchNid, guestAddress);
+
+		if (IsKernelDynlibDlsymIdentifier(symbolName) || IsKernelDynlibDlsymIdentifier(dispatchNid))
+		{
+			RegisterDlsymRuntimeSymbolKey(RuntimeStubNids.KernelDynlibDlsym, guestAddress);
+			RegisterDlsymRuntimeSymbolKey(KernelDynlibDlsymAerolibNid, guestAddress);
+			RegisterDlsymRuntimeSymbolKey("sceKernelDlsym", guestAddress);
+		}
+
+		if (hleSymbol.HasValue)
+		{
+			RegisterDlsymRuntimeSymbolKey(hleSymbol.Value.Nid, guestAddress);
+			RegisterDlsymRuntimeSymbolKey(hleSymbol.Value.ExportName, guestAddress);
+		}
+	}
+
+	private void RegisterDlsymRuntimeSymbolKey(string key, ulong guestAddress)
+	{
+		if (string.IsNullOrWhiteSpace(key) || !IsRuntimeSymbolAddressUsable(guestAddress))
+		{
+			return;
+		}
+
+		_runtimeSymbolsByName[key] = guestAddress;
+		_lazyDlsymStubCache[key] = guestAddress;
+	}
+
+	private void LogLazyImportStubMaterializationFailure(string reason, string dispatchNid, string symbolName)
+	{
+		Log.Warn(
+			$"Lazy import stub materialization failed ({reason}): " +
+			$"nid={dispatchNid} symbol='{symbolName}'");
+	}
+
+	private unsafe bool TryResolveImportStubRegionBounds(
+		ImportStubEntry[] importEntries,
+		out ulong regionBase,
+		out ulong regionLimit)
+	{
+		regionBase = 0;
+		regionLimit = 0;
+
+		for (var candidateIndex = 0; candidateIndex < 64; candidateIndex++)
+		{
+			var candidateBase = ImportStubRegionCanonicalBase -
+				(ulong)candidateIndex * ImportStubRegionAddressStride;
+			if (!_hostMemory.Query(candidateBase, out var memoryInfo) ||
+				memoryInfo.RegionSize == 0 ||
+				memoryInfo.State != HostRegionState.Committed)
+			{
+				continue;
+			}
+
+			var candidateLimit = candidateBase + memoryInfo.RegionSize;
+			var hasStub = false;
+			for (var i = 0; i < importEntries.Length; i++)
+			{
+				var entryAddress = importEntries[i].Address;
+				if (entryAddress < candidateBase || entryAddress >= candidateLimit)
+				{
+					continue;
+				}
+
+				if ((entryAddress - candidateBase) % LazyImportStubSlotSize != 0)
+				{
+					continue;
+				}
+
+				hasStub = true;
+				break;
+			}
+
+			if (!hasStub)
+			{
+				continue;
+			}
+
+			regionBase = candidateBase;
+			regionLimit = candidateLimit;
+			return true;
+		}
+
+		ulong maxStubEnd = 0;
+		for (var i = 0; i < importEntries.Length; i++)
+		{
+			var entryAddress = importEntries[i].Address;
+			if (entryAddress < ImportStubRegionCanonicalBase)
+			{
+				continue;
+			}
+
+			if ((entryAddress - ImportStubRegionCanonicalBase) % LazyImportStubSlotSize != 0)
+			{
+				continue;
+			}
+
+			var entryEnd = entryAddress + LazyImportStubSlotSize;
+			if (entryEnd > maxStubEnd)
+			{
+				maxStubEnd = entryEnd;
+				regionBase = ImportStubRegionCanonicalBase;
+			}
+		}
+
+		if (regionBase == 0 || maxStubEnd <= regionBase)
+		{
+			return false;
+		}
+
+		var spanBytes = maxStubEnd - regionBase;
+		regionLimit = regionBase + AlignUp(spanBytes, ImportStubRegionPageSize);
+		return regionLimit > regionBase;
+	}
+
+	private bool EnsureLazyImportStubPoolMapped()
+	{
+		if (_lazyImportStubPoolMapped && _lazyImportStubPoolBase != 0)
+		{
+			return true;
+		}
+
+		var importEntries = _importEntries;
+		if (!TryResolveImportStubRegionBounds(importEntries, out var importStubRegionBase, out var importStubRegionLimit))
+		{
+			return false;
+		}
+
+		ulong nextSlot = importStubRegionBase;
+		for (var i = 0; i < importEntries.Length; i++)
+		{
+			var entryAddress = importEntries[i].Address;
+			if (entryAddress < importStubRegionBase || entryAddress >= importStubRegionLimit)
+			{
+				continue;
+			}
+
+			var entryEnd = entryAddress + LazyImportStubSlotSize;
+			if (entryEnd > nextSlot)
+			{
+				nextSlot = entryEnd;
+			}
+		}
+
+		if (nextSlot >= importStubRegionLimit)
+		{
+			return false;
+		}
+
+		_lazyImportStubPoolBase = importStubRegionBase;
+		_lazyImportStubNextSlot = nextSlot;
+		_lazyImportStubPoolLimit = importStubRegionLimit;
+		_lazyImportStubPoolMapped = true;
+		return true;
+	}
+
+	private bool TryAllocateLazyImportStubSlot(out ulong guestAddress)
+	{
+		guestAddress = 0;
+		if (!_lazyImportStubPoolMapped ||
+			_lazyImportStubNextSlot < _lazyImportStubPoolBase ||
+			_lazyImportStubNextSlot + LazyImportStubSlotSize > _lazyImportStubPoolLimit)
+		{
+			return false;
+		}
+
+		guestAddress = _lazyImportStubNextSlot;
+		_lazyImportStubNextSlot += LazyImportStubSlotSize;
+		return true;
 	}
 
 	private bool TryResolveRuntimeSymbolAlias(string symbolName, out ulong address)
@@ -2095,8 +2440,8 @@ public sealed partial class DirectExecutionBackend
 			!TryResolveIl2CppApiAddress(symbolName, out var resolvedAddress) ||
 			!TryWriteUInt64Compat(outputAddress, resolvedAddress))
 		{
-			Console.Error.WriteLine(
-				$"[LOADER][WARN] il2cpp_api_lookup_symbol failed: name='{symbolName}' out=0x{outputAddress:X16}");
+			Log.Warn(
+				$"il2cpp_api_lookup_symbol failed: name='{symbolName}' out=0x{outputAddress:X16}");
 			if (outputAddress != 0)
 			{
 				_ = TryWriteUInt64Compat(outputAddress, 0);
@@ -2313,7 +2658,7 @@ public sealed partial class DirectExecutionBackend
 			}
 			FlushInstructionCache(GetCurrentProcess(), (void*)num, 5u);
 			_patchedEa020eLookupCall = true;
-			Console.Error.WriteLine($"[LOADER][WARNING] Import#{dispatchIndex}: patched hash-lookup call at 0x{num:X16} -> NOP*5");
+			Log.Warning($"Import#{dispatchIndex}: patched hash-lookup call at 0x{num:X16} -> NOP*5");
 		}
 		catch
 		{

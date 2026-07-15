@@ -147,14 +147,14 @@ internal static partial class Program
             return true;
         }
 
-        Console.Error.WriteLine(
-            $"[LOADER][ERROR] Unsupported process architecture " +
+        Log.Error(
+            $"Unsupported process architecture " +
             $"{RuntimeInformation.ProcessArchitecture}: guest code executes " +
             "natively, so SharpEmu must run as an x86-64 process.");
         if (OperatingSystem.IsMacOS())
         {
-            Console.Error.WriteLine(
-                "[LOADER][ERROR] On Apple Silicon, use the osx-x64 build under " +
+            Log.Error(
+                "On Apple Silicon, use the osx-x64 build under " +
                 "Rosetta 2 (install with: softwareupdate --install-rosetta).");
         }
 
@@ -202,7 +202,7 @@ internal static partial class Program
         {
             if (File.Exists(candidate) && NativeLibrary.TryLoad(candidate, out _))
             {
-                Console.Error.WriteLine($"[LOADER][INFO] Vulkan loader preloaded: {candidate}");
+                Log.Info($"Vulkan loader preloaded: {candidate}");
                 return;
             }
         }
@@ -212,15 +212,15 @@ internal static partial class Program
             return;
         }
 
-        Console.Error.WriteLine(
-            "[LOADER][WARN] No x86-64 Vulkan loader found; video output will be unavailable. " +
+        Log.Warn(
+            "No x86-64 Vulkan loader found; video output will be unavailable. " +
             "Place a universal libMoltenVK.dylib (from the MoltenVK releases) next to SharpEmu " +
             "as libvulkan.1.dylib.");
     }
 
     private static int RunEmulator(string[] args, bool isMitigatedChild)
     {
-        Console.Error.WriteLine($"[DEBUG] SharpEmu starting with {args.Length} args");
+        Log.Debug($"SharpEmu starting with {args.Length} args");
 
         if (!isMitigatedChild && TryRunMitigatedChild(args, out var childExitCode))
         {
@@ -254,7 +254,7 @@ internal static partial class Program
         Log.Info(HostSystemInfo.Summary);
 
         ebootPath = Path.GetFullPath(ebootPath);
-        Console.Error.WriteLine($"[DEBUG] Full path: {ebootPath}");
+        Log.Debug($"Full path: {ebootPath}");
 
         if (!File.Exists(ebootPath))
         {
@@ -262,7 +262,7 @@ internal static partial class Program
             return 2;
         }
 
-        Console.Error.WriteLine("[DEBUG] Creating runtime...");
+        Log.Debug("Creating runtime...");
 
         try
         {
@@ -285,13 +285,12 @@ internal static partial class Program
                 };
                 Console.CancelKeyPress += cancelHandler;
 
-                Console.Error.WriteLine($"[DEBUG] Running: {ebootPath}");
+                Log.Debug($"Running: {ebootPath}");
                 result = runtime.Run(ebootPath);
-                Console.Error.WriteLine($"[DEBUG] Result: {result}");
+                Log.Debug($"Result: {result}");
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine($"[DEBUG] Exception: {ex}");
                 Log.Error("SharpEmu failed to run.", ex);
                 return 3;
             }
@@ -547,7 +546,7 @@ internal static partial class Program
             if (!InitializeProcThreadAttributeList(attributeList, 1, 0, ref attributeListSize))
             {
                 childExitCode = 5;
-                Console.Error.WriteLine($"[ERROR] Failed to initialize mitigation attributes: {Marshal.GetLastWin32Error()}");
+                Log.Error($"Failed to initialize mitigation attributes: {Marshal.GetLastWin32Error()}");
                 return true;
             }
 
@@ -572,7 +571,7 @@ internal static partial class Program
                 0))
             {
                 childExitCode = 5;
-                Console.Error.WriteLine($"[ERROR] Failed to apply mitigation attributes: {Marshal.GetLastWin32Error()}");
+                Log.Error($"Failed to apply mitigation attributes: {Marshal.GetLastWin32Error()}");
                 return true;
             }
 
@@ -594,7 +593,7 @@ internal static partial class Program
             if (!created)
             {
                 childExitCode = 5;
-                Console.Error.WriteLine($"[ERROR] Failed to launch mitigated child process: {Marshal.GetLastWin32Error()}");
+                Log.Error($"Failed to launch mitigated child process: {Marshal.GetLastWin32Error()}");
                 return true;
             }
 
@@ -633,7 +632,7 @@ internal static partial class Program
                 }
 
                 childExitCode = unchecked((int)exitCode);
-                Console.Error.WriteLine("[DEBUG] Running in mitigated child process (CET/CFG disabled).");
+                Log.Debug("Running in mitigated child process (CET/CFG disabled).");
                 return true;
             }
             finally
@@ -834,11 +833,11 @@ internal static partial class Program
 
                 Console.SetOut(new TeeTextWriter(Console.Out, _consoleMirrorFile));
                 Console.SetError(new TeeTextWriter(Console.Error, _consoleMirrorFile));
-                Console.Error.WriteLine($"[DEBUG] Log file: {Path.GetFullPath(path)}");
+                Log.Debug($"Log file: {Path.GetFullPath(path)}");
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine($"[WARN] Could not open log file '{path}': {ex.Message}");
+                Log.Warn($"Could not open log file '{path}': {ex.Message}");
             }
         }
     }

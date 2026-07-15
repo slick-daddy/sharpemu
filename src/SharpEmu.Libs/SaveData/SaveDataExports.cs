@@ -6,11 +6,13 @@ using SharpEmu.Libs.Kernel;
 using System.Buffers;
 using System.Buffers.Binary;
 using System.Text;
+using SharpEmu.Logging;
 
 namespace SharpEmu.Libs.SaveData;
 
 public static class SaveDataExports
 {
+    private static readonly SharpEmuLogger Log = SharpEmuLog.For("Libs.SaveData");
     private const int OrbisSaveDataErrorParameter = unchecked((int)0x809F0000);
     private const int OrbisSaveDataErrorExists = unchecked((int)0x809F0007);
     private const int OrbisSaveDataErrorNotFound = unchecked((int)0x809F0008);
@@ -612,7 +614,7 @@ public static class SaveDataExports
     {
         if (string.Equals(Environment.GetEnvironmentVariable("SHARPEMU_LOG_SAVEDATA"), "1", StringComparison.Ordinal))
         {
-            Console.Error.WriteLine($"[LOADER][TRACE] savedata.{message}");
+            Log.Trace($"savedata.{message}");
         }
     }
 
@@ -630,6 +632,7 @@ public static class SaveDataExports
         ulong InfosAddress);
 
     private readonly record struct SaveEntry(string Name, string Path, DateTime LastWriteUtc);
+<<<<<<< HEAD
 
     [SysAbiExport(
         Nid = "sDCBrmc61XU",
@@ -882,3 +885,6 @@ public static class SaveDataExports
         }
     }
 }
+=======
+}
+>>>>>>> ab12482 (fix: resolve duplicate event handlers, remove dead code, and migrate logging to structured logger)

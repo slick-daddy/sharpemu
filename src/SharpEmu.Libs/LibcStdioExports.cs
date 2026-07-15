@@ -6,22 +6,29 @@ using System.Collections.Concurrent;
 using System.Runtime.InteropServices;
 using SharpEmu.HLE;
 using SharpEmu.Libs.Kernel;
+using SharpEmu.Logging;
 
 namespace SharpEmu.Libs.LibcStdio;
 
 public static class LibcStdioExports
 {
+    private static readonly SharpEmuLogger Log = SharpEmuLog.For("Libs.LibcStdio");
     private const int MaxPathLength = 4096;
     private const int MaxModeLength = 16;
     private const int ReadChunkSize = 1024 * 1024;
     private const ulong GuestFileObjectSize = 0x100;
 
     private static readonly ConcurrentDictionary<ulong, FileStream> _fileHandles = new();
+<<<<<<< HEAD
 
     private static readonly bool _traceStdio =
         string.Equals(Environment.GetEnvironmentVariable("SHARPEMU_LOG_STDIO"), "1", StringComparison.Ordinal);
 
     private const int CtypeTableLowerBound = -128;
+=======
+    private static long _nextHandle = 0x1000 - 8;
+private const int CtypeTableLowerBound = -128;
+>>>>>>> ab12482 (fix: resolve duplicate event handlers, remove dead code, and migrate logging to structured logger)
     private const int CtypeTableUpperBound = 255;
     private const int CtypeTableEntryCount = CtypeTableUpperBound - CtypeTableLowerBound + 1; // 384 entries * 2 bytes = 768 bytes
 
@@ -69,10 +76,8 @@ public static class LibcStdioExports
         var hostPath = KernelMemoryCompatExports.ResolveGuestPath(guestPath);
         if (fileAccess != FileAccess.Read && KernelMemoryCompatExports.IsReadOnlyGuestMutationPath(guestPath))
         {
-            if (_traceStdio)
             {
-                Console.Error.WriteLine(
-                    $"[LOADER][TRACE] fopen: guest='{guestPath}' host='{hostPath}' mode='{mode}' -> PERMISSION_DENIED (read-only path)");
+                Log.Trace($"fopen: guest='{guestPath}' host='{hostPath}' mode='{mode}' -> PERMISSION_DENIED (read-only path)");
             }
 
             ctx[CpuRegister.Rax] = 0;
@@ -112,11 +117,8 @@ public static class LibcStdioExports
             }
 
             _fileHandles[handle] = stream;
-
-            if (_traceStdio)
             {
-                Console.Error.WriteLine(
-                    $"[LOADER][TRACE] fopen: guest='{guestPath}' host='{hostPath}' mode='{mode}' -> OK handle=0x{handle:X} length={stream.Length}");
+                Log.Trace($"fopen: guest='{guestPath}' host='{hostPath}' mode='{mode}' -> OK handle=0x{handle:X} length={stream.Length}");
             }
 
             ctx[CpuRegister.Rax] = handle;
@@ -124,10 +126,8 @@ public static class LibcStdioExports
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            if (_traceStdio)
             {
-                Console.Error.WriteLine(
-                    $"[LOADER][TRACE] fopen: guest='{guestPath}' host='{hostPath}' mode='{mode}' -> FAILED {ex.GetType().Name}: {ex.Message}");
+                Log.Trace($"fopen: guest='{guestPath}' host='{hostPath}' mode='{mode}' -> FAILED {ex.GetType().Name}: {ex.Message}");
             }
 
             ctx[CpuRegister.Rax] = 0;
@@ -279,11 +279,8 @@ public static class LibcStdioExports
         {
             ArrayPool<byte>.Shared.Return(buffer);
         }
-
-        if (_traceStdio)
         {
-            Console.Error.WriteLine(
-                $"[LOADER][TRACE] fread: handle=0x{handle:X} requested={totalRequested} read={totalRead} pos={stream.Position}");
+            Log.Trace($"fread: handle=0x{handle:X} requested={totalRequested} read={totalRead} pos={stream.Position}");
         }
 
         ctx[CpuRegister.Rax] = totalRead / elementSize;
@@ -680,11 +677,8 @@ public static class LibcStdioExports
             var stream = new FileStream(hostPath, fileMode, fileAccess, FileShare.ReadWrite);
             // freopen keeps the caller's FILE* identity, so rebind the same handle value.
             _fileHandles[handle] = stream;
-
-            if (_traceStdio)
             {
-                Console.Error.WriteLine(
-                    $"[LOADER][TRACE] freopen: guest='{guestPath}' host='{hostPath}' mode='{mode}' -> OK handle=0x{handle:X}");
+                Log.Trace($"freopen: guest='{guestPath}' host='{hostPath}' mode='{mode}' -> OK handle=0x{handle:X}");
             }
 
             ctx[CpuRegister.Rax] = handle;
@@ -692,10 +686,8 @@ public static class LibcStdioExports
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            if (_traceStdio)
             {
-                Console.Error.WriteLine(
-                    $"[LOADER][TRACE] freopen: guest='{guestPath}' host='{hostPath}' mode='{mode}' -> FAILED {ex.GetType().Name}: {ex.Message}");
+                Log.Trace($"freopen: guest='{guestPath}' host='{hostPath}' mode='{mode}' -> FAILED {ex.GetType().Name}: {ex.Message}");
             }
 
             ctx[CpuRegister.Rax] = 0;

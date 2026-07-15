@@ -2,11 +2,13 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 using SharpEmu.HLE;
+using SharpEmu.Logging;
 
 namespace SharpEmu.Libs.Np;
 
 public static class NpEntitlementAccessExports
 {
+    private static readonly SharpEmuLogger Log = SharpEmuLog.For("Libs.Np");
     private const int BootParamClearSize = 0x20;
     private const int EmptyAddcontInfoListSize = 0x10;
 
@@ -60,11 +62,6 @@ public static class NpEntitlementAccessExports
 
     private static void TraceNpEntitlementAccess(string message)
     {
-        if (!string.Equals(Environment.GetEnvironmentVariable("SHARPEMU_LOG_NP"), "1", StringComparison.Ordinal))
-        {
-            return;
-        }
-
-        Console.Error.WriteLine($"[LOADER][TRACE] np.entitlement.{message}");
+        Log.Trace($"np.entitlement.{message}");
     }
 }

@@ -5,11 +5,13 @@ using SharpEmu.HLE;
 using SharpEmu.HLE.Host;
 using System.Buffers.Binary;
 using System.Diagnostics;
+using SharpEmu.Logging;
 
 namespace SharpEmu.Libs.Pad;
 
 public static class PadExports
 {
+    private static readonly SharpEmuLogger Log = SharpEmuLog.For("Libs.Pad");
     private const int OrbisPadErrorInvalidHandle = unchecked((int)0x80920003);
     private const int OrbisPadErrorNotInitialized = unchecked((int)0x80920005);
     private const int OrbisPadErrorDeviceNotConnected = unchecked((int)0x80920007);
@@ -93,9 +95,9 @@ public static class PadExports
         input.EnsureStarted();
         if (Interlocked.Exchange(ref _controlsAnnouncementLogged, 1) == 0)
         {
-            Console.Error.WriteLine(input.DescribeConnectedGamepad() is { } gamepadName
-                ? $"[LOADER][INFO] Controls: {gamepadName} connected (keyboard fallback also active)."
-                : "[LOADER][INFO] Keyboard controls: Arrow keys = D-pad, WASD = left stick, IJKL = right stick, Z/Enter = Cross, X/Esc = Circle, C = Square, V = Triangle, Q = L1, E = R1, R = L2, F = R2, Tab/Backspace = Options. A DualSense or Xbox controller will be used automatically when plugged in.");
+            Log.Info(input.DescribeConnectedGamepad() is { } gamepadName
+                ? $"Controls: {gamepadName} connected (keyboard fallback also active)."
+                : "Keyboard controls: Arrow keys = D-pad, WASD = left stick, IJKL = right stick, Z/Enter = Cross, X/Esc = Circle, C = Square, V = Triangle, Q = L1, E = R1, R = L2, F = R2, Tab/Backspace = Options. A DualSense or Xbox controller will be used automatically when plugged in.");
         }
 
         return ctx.SetReturn(PrimaryPadHandle);

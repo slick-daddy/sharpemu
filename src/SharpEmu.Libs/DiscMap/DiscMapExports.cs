@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 using SharpEmu.HLE;
+using SharpEmu.Logging;
 
 namespace SharpEmu.Libs.DiscMap;
 
@@ -15,6 +16,7 @@ namespace SharpEmu.Libs.DiscMap;
 /// </summary>
 public static class DiscMapExports
 {
+    private static readonly SharpEmuLogger Log = SharpEmuLog.For("Libs.DiscMap");
     private const int DiscMapErrorInvalidArgument = unchecked((int)0x81100001);
     private const int DiscMapErrorLocationNotMapped = unchecked((int)0x81100002);
     private const int DiscMapErrorFileNotFound = unchecked((int)0x81100003);
@@ -97,14 +99,9 @@ public static class DiscMapExports
 
     private static void TraceDiscMap(CpuContext ctx, string exportName, ulong pathAddress, ulong offset, ulong size)
     {
-        if (!string.Equals(Environment.GetEnvironmentVariable("SHARPEMU_LOG_DISCMAP"), "1", StringComparison.Ordinal))
-        {
-            return;
-        }
-
         var path = ctx.TryReadNullTerminatedUtf8(pathAddress, 1024, out var value)
             ? value
             : $"<unreadable 0x{pathAddress:X16}>";
-        Console.Error.WriteLine($"[HLE][DISCMAP] {exportName} path={path} offset=0x{offset:X} size=0x{size:X}");
+        Log.Info($"{exportName} path={path} offset=0x{offset:X} size=0x{size:X}");
     }
 }

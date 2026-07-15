@@ -146,8 +146,8 @@ public partial class MainWindow : Window
         RescanButton.Click += async (_, _) => await RescanLibraryAsync();
         OpenFileButton.Click += async (_, _) => await OpenFileAsync();
         LaunchButton.Click += (_, _) => LaunchSelected();
-        ClearLogButton.Click += (_, _) => { _consoleLines.Clear(); _allConsoleLines.Clear(); };
         StopButton.Click += (_, _) => StopEmulator();
+        ClearLogButton.Click += (_, _) => { _consoleLines.Clear(); _allConsoleLines.Clear(); };
         SessionStopButton.Click += (_, _) => StopEmulator();
         SessionConsoleButton.Click += (_, _) => ShowConsoleWindow();
         CopyLogButton.Click += async (_, _) => await CopyConsoleAsync();

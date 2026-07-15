@@ -5,18 +5,17 @@ using SharpEmu.HLE;
 using SharpEmu.Libs.Ampr;
 using System.Collections.Concurrent;
 using System.Threading;
+using SharpEmu.Logging;
 
 namespace SharpEmu.Libs.Kernel;
 
 public static class KernelAprCompatExports
 {
+    private static readonly SharpEmuLogger Log = SharpEmuLog.For("Libs.Kernel");
     private static readonly ConcurrentDictionary<uint, AprSubmission> _submittedCommandBuffers = new();
     private static int _nextSubmissionId;
     private static int _aprWaitTraceCount;
-    private static readonly bool _traceApr =
-        string.Equals(Environment.GetEnvironmentVariable("SHARPEMU_LOG_AMPR"), "1", StringComparison.Ordinal);
-
-    private readonly record struct AprSubmission(ulong CommandBuffer, ulong Priority, ulong ResultAddress);
+private readonly record struct AprSubmission(ulong CommandBuffer, ulong Priority, ulong ResultAddress);
 
     [SysAbiExport(
         Nid = "ASoW5WE-UPo",
@@ -171,21 +170,14 @@ public static class KernelAprCompatExports
         ulong priority,
         ulong aux)
     {
-        if (!_traceApr)
-        {
-            return;
-        }
-
         var returnRip = 0UL;
         _ = ctx.TryReadUInt64(ctx[CpuRegister.Rsp], out returnRip);
-        Console.Error.WriteLine(
-            $"[LOADER][TRACE] apr.{operation}: id=0x{submissionId:X8} cmd=0x{commandBuffer:X16} priority=0x{priority:X16} aux=0x{aux:X16} ret=0x{returnRip:X16}");
+        Log.Trace($"apr.{operation}: id=0x{submissionId:X8} cmd=0x{commandBuffer:X16} priority=0x{priority:X16} aux=0x{aux:X16} ret=0x{returnRip:X16}");
         if (aux != 0 &&
             ctx.TryReadUInt64(aux, out var result0) &&
             ctx.TryReadUInt64(aux + sizeof(ulong), out var result1))
         {
-            Console.Error.WriteLine(
-                $"[LOADER][TRACE] apr.{operation}.result: addr=0x{aux:X16} q0=0x{result0:X16} q1=0x{result1:X16}");
+            Log.Trace($"apr.{operation}.result: addr=0x{aux:X16} q0=0x{result0:X16} q1=0x{result1:X16}");
         }
     }
 
@@ -197,11 +189,6 @@ public static class KernelAprCompatExports
         ulong priority,
         ulong resultAddress)
     {
-        if (!_traceApr)
-        {
-            return;
-        }
-
         var traceCount = Interlocked.Increment(ref _aprWaitTraceCount);
         if (traceCount > 32 && (traceCount & 0x3FF) != 0)
         {
@@ -210,10 +197,11 @@ public static class KernelAprCompatExports
 
         var returnRip = 0UL;
         _ = ctx.TryReadUInt64(ctx[CpuRegister.Rsp], out returnRip);
-        Console.Error.WriteLine(
-            $"[LOADER][TRACE] apr.{operation}: id=0x{submissionId:X8} cmd=0x{commandBuffer:X16} " +
+        Log.Trace(
+  $"apr.{operation}: id=0x{submissionId:X8} cmd=0x{commandBuffer:X16} " +
             $"rsi=0x{priority:X16} rdx=0x{resultAddress:X16} rcx=0x{ctx[CpuRegister.Rcx]:X16} " +
-            $"r8=0x{ctx[CpuRegister.R8]:X16} r9=0x{ctx[CpuRegister.R9]:X16} ret=0x{returnRip:X16}");
+            $"r8=0x{ctx[CpuRegister.R8]:X16} r9=0x{ctx[CpuRegister.R9]:X16} ret=0x{returnRip:X16}"
+);
         TraceReadableQword(ctx, operation, "rsi", priority);
         TraceReadableQword(ctx, operation, "rdx", resultAddress);
         TraceReadableQword(ctx, operation, "rcx", ctx[CpuRegister.Rcx]);
@@ -227,7 +215,6 @@ public static class KernelAprCompatExports
             return;
         }
 
-        Console.Error.WriteLine(
-            $"[LOADER][TRACE] apr.{operation}.{name}: addr=0x{address:X16} q0=0x{value:X16}");
+        Log.Trace($"apr.{operation}.{name}: addr=0x{address:X16} q0=0x{value:X16}");
     }
 }

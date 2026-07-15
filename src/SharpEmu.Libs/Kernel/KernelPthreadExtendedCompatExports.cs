@@ -7,11 +7,13 @@ using System.Collections.Concurrent;
 using System.Text;
 using System.Threading;
 using System.Diagnostics.CodeAnalysis;
+using SharpEmu.Logging;
 
 namespace SharpEmu.Libs.Kernel;
 
 public static class KernelPthreadExtendedCompatExports
 {
+    private static readonly SharpEmuLogger Log = SharpEmuLog.For("Libs.Kernel");
     private const int DefaultThreadPriority = 700;
     private const ulong DefaultThreadAffinityMask = 0x7FUL;
     private const int DefaultDetachState = 0;
@@ -1536,9 +1538,10 @@ public static class KernelPthreadExtendedCompatExports
                 if (rwlock.WriterThreadId != 0 ||
                     rwlock.CompatWriterTotalCount > rwlock.CompatWriterCounts.GetValueOrDefault(currentThreadId))
                 {
-                    Console.Error.WriteLine(
-                        $"[LOADER][ERROR] RWLOCK READER/WRITER COEXIST: resolved=0x{resolvedAddress:X} reader=0x{currentThreadId:X} " +
-                        $"writer=0x{rwlock.WriterThreadId:X} compat_total={rwlock.CompatWriterTotalCount} readers_total={rwlock.ReaderTotalCount}");
+                    Log.Error(
+  $"RWLOCK READER/WRITER COEXIST: resolved=0x{resolvedAddress:X} reader=0x{currentThreadId:X} " +
+                        $"writer=0x{rwlock.WriterThreadId:X} compat_total={rwlock.CompatWriterTotalCount} readers_total={rwlock.ReaderTotalCount}"
+);
                 }
                 rwlock.AddReader(currentThreadId);
             }
@@ -1582,9 +1585,10 @@ public static class KernelPthreadExtendedCompatExports
             rwlock.ReaderTotalCount != 0 ||
             rwlock.CompatWriterTotalCount > rwlock.CompatWriterCounts.GetValueOrDefault(currentThreadId))
         {
-            Console.Error.WriteLine(
-                $"[LOADER][ERROR] RWLOCK WRITER CONFLICT at {site}: resolved=0x{resolvedAddress:X} writer=0x{currentThreadId:X} " +
-                $"existing_writer=0x{rwlock.WriterThreadId:X} readers_total={rwlock.ReaderTotalCount} compat_total={rwlock.CompatWriterTotalCount}");
+            Log.Error(
+  $"RWLOCK WRITER CONFLICT at {site}: resolved=0x{resolvedAddress:X} writer=0x{currentThreadId:X} " +
+                $"existing_writer=0x{rwlock.WriterThreadId:X} readers_total={rwlock.ReaderTotalCount} compat_total={rwlock.CompatWriterTotalCount}"
+);
         }
     }
 
@@ -1798,25 +1802,5 @@ public static class KernelPthreadExtendedCompatExports
         utf8.AsSpan(0, payloadLength).CopyTo(payload);
         payload[^1] = 0;
         return ctx.Memory.TryWrite(address, payload);
-    }
-
-    private static bool TryReadInt32(CpuContext ctx, ulong address, out int value)
-    {
-        Span<byte> bytes = stackalloc byte[sizeof(int)];
-        if (!ctx.Memory.TryRead(address, bytes))
-        {
-            value = 0;
-            return false;
-        }
-
-        value = BinaryPrimitives.ReadInt32LittleEndian(bytes);
-        return true;
-    }
-
-    private static bool TryWriteInt32(CpuContext ctx, ulong address, int value)
-    {
-        Span<byte> bytes = stackalloc byte[sizeof(int)];
-        BinaryPrimitives.WriteInt32LittleEndian(bytes, value);
-        return ctx.Memory.TryWrite(address, bytes);
     }
 }

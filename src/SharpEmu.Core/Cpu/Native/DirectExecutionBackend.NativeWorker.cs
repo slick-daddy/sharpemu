@@ -115,8 +115,8 @@ public sealed partial class DirectExecutionBackend
 		{
 			if (Interlocked.Exchange(ref _nativeWorkerCreationFailedLogged, 1) == 0)
 			{
-				Console.Error.WriteLine(
-					"[LOADER][WARN] Failed to create a native guest worker thread; falling back to inline guest execution.");
+			Log.Warn(
+				"Failed to create a native guest worker thread; falling back to inline guest execution.");
 			}
 			return null;
 		}
@@ -491,8 +491,7 @@ public sealed partial class DirectExecutionBackend
 			{
 				try
 				{
-					Console.Error.WriteLine(
-						$"[LOADER][ERROR] Native guest worker prologue failed: {ex.GetType().Name}: {ex.Message}");
+					Log.Error($"Native guest worker prologue failed: {ex.GetType().Name}: {ex.Message}");
 				}
 				catch
 				{
@@ -513,8 +512,7 @@ public sealed partial class DirectExecutionBackend
 			{
 				try
 				{
-					Console.Error.WriteLine(
-						$"[LOADER][ERROR] Native guest worker epilogue failed: {ex.GetType().Name}: {ex.Message}");
+					Log.Error($"Native guest worker epilogue failed: {ex.GetType().Name}: {ex.Message}");
 				}
 				catch
 				{
@@ -625,8 +623,8 @@ public sealed partial class DirectExecutionBackend
 				// The worker is still parked in guest code (teardown should have unwound
 				// it first). Leak the stub, control block, events and GC handle rather
 				// than have the thread execute freed memory.
-				Console.Error.WriteLine(
-					$"[LOADER][WARN] Native guest worker tid={_nativeThreadId} did not stop; leaking its run loop.");
+			Log.Warn(
+				$"Native guest worker tid={_nativeThreadId} did not stop; leaking its run loop.");
 				return;
 			}
 			if (_loopStub != null)

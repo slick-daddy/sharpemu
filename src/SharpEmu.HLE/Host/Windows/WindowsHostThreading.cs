@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 using System.Runtime.InteropServices;
+using SharpEmu.Logging;
 
 namespace SharpEmu.HLE.Host.Windows;
 
@@ -25,6 +26,8 @@ internal sealed unsafe partial class WindowsHostThreading : IHostThreading
 
     private static int _timerResolutionRequested;
 
+    private static readonly SharpEmuLogger Log = SharpEmuLog.For("HLE.HostThreading");
+
     public void RequestTimerResolution()
     {
         if (Interlocked.Exchange(ref _timerResolutionRequested, 1) != 0)
@@ -36,15 +39,15 @@ internal sealed unsafe partial class WindowsHostThreading : IHostThreading
         {
             if (TimeBeginPeriod(1) != 0)
             {
-                Console.Error.WriteLine(
-                    "[LOADER][WARN] Host timer resolution request rejected; " +
+                Log.Warn(
+                    "Host timer resolution request rejected; " +
                     "timed waits keep the default ~15.6 ms granularity.");
             }
         }
         catch (DllNotFoundException exception)
         {
-            Console.Error.WriteLine(
-                $"[LOADER][WARN] Host timer resolution unavailable: {exception.Message}");
+            Log.Warn(
+                $"Host timer resolution unavailable: {exception.Message}");
         }
     }
 

@@ -1,6 +1,7 @@
 // Copyright (C) 2026 SharpEmu Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+using SharpEmu.Logging;
 using System.Collections.Concurrent;
 using System.Reflection;
 using System.Runtime.CompilerServices;
@@ -9,6 +10,7 @@ namespace SharpEmu.HLE;
 
 public sealed class ModuleManager : IModuleManager
 {
+    private static readonly SharpEmuLogger Log = SharpEmuLog.For("HLE.ModuleManager");
     private readonly ConcurrentDictionary<string, Delegate> _dispatchTable = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, ExportedFunction> _exportTable = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, ExportedFunction> _exportNameTable = new(StringComparer.Ordinal);
@@ -32,8 +34,39 @@ public sealed class ModuleManager : IModuleManager
             {
                 if (!_dispatchTable.TryAdd(export.Nid, export.Function))
                 {
+<<<<<<< HEAD
                     Console.Error.WriteLine($"[HLE] Duplicate NID '{export.Nid}' ({export.Name}) — already registered, skipping.");
                     continue;
+=======
+                    var exportAttribute = method.GetCustomAttribute<SysAbiExportAttribute>(inherit: false);
+                    if (exportAttribute is null)
+                    {
+                        continue;
+                    }
+
+                    var exportInfo = ResolveExportInfo(exportAttribute, method, generation, symbolCatalog);
+                    if (exportInfo is null)
+                    {
+                        continue;
+                    }
+
+                    var handler = CreateHandler(type, method, instances);
+                    if (!_dispatchTable.TryAdd(exportInfo.Value.Nid, handler))
+                    {
+                        Log.Warn($"Duplicate NID '{exportInfo.Value.Nid}' ({exportInfo.Value.ExportName}) — already registered, skipping.");
+                        continue;
+                    }
+
+                    _exportTable[exportInfo.Value.Nid] = new ExportedFunction(
+                        exportInfo.Value.LibraryName,
+                        exportInfo.Value.Nid,
+                        exportInfo.Value.ExportName,
+                        exportInfo.Value.Target,
+                        (SysAbiFunction)handler);
+                    _exportNameTable.TryAdd(exportInfo.Value.ExportName, _exportTable[exportInfo.Value.Nid]);
+
+                    registeredCount++;
+>>>>>>> ab12482 (fix: resolve duplicate event handlers, remove dead code, and migrate logging to structured logger)
                 }
 
                 _exportTable[export.Nid] = export;
@@ -142,8 +175,7 @@ public sealed class ModuleManager : IModuleManager
             }
         }
 
-        Console.Error.WriteLine(
-            $"[HLE] Warmed {warmed} type initializers ({failed} threw) + JIT-compiled {jitted} methods ({jitFailed} skipped) across {assemblies.Length} HLE assemblies, plus {bclWarmed} framework type initializers.");
+        Log.Info($"Warmed {warmed} type initializers ({failed} threw) + JIT-compiled {jitted} methods ({jitFailed} skipped) across {assemblies.Length} HLE assemblies, plus {bclWarmed} framework type initializers.");
     }
 
     // Framework .cctors too (but not JIT — the BCL is too large).
@@ -275,7 +307,7 @@ public sealed class ModuleManager : IModuleManager
 
         if (!_dispatchTable.TryGetValue(nid, out var function) || !_exportTable.TryGetValue(nid, out var export))
         {
-            Console.Error.WriteLine($"[HLE] NID '{nid}' not found in dispatch table.");
+            Log.Warn($"NID '{nid}' not found in dispatch table.");
             context[CpuRegister.Rax] = unchecked((ulong)(int)OrbisGen2Result.ORBIS_GEN2_ERROR_NOT_FOUND);
             result = OrbisGen2Result.ORBIS_GEN2_ERROR_NOT_FOUND;
             return false;
@@ -283,7 +315,7 @@ public sealed class ModuleManager : IModuleManager
 
         if ((export.Target & context.TargetGeneration) == 0)
         {
-            Console.Error.WriteLine($"[HLE] NID '{nid}' ({export.Name}) found but not implemented for generation {context.TargetGeneration} (targets: {export.Target}).");
+            Log.Warn($"NID '{nid}' ({export.Name}) found but not implemented for generation {context.TargetGeneration} (targets: {export.Target}).");
             context[CpuRegister.Rax] = unchecked((ulong)(int)OrbisGen2Result.ORBIS_GEN2_ERROR_NOT_IMPLEMENTED);
             result = OrbisGen2Result.ORBIS_GEN2_ERROR_NOT_IMPLEMENTED;
             return false;

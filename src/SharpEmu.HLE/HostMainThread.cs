@@ -1,9 +1,14 @@
 // Copyright (C) 2026 SharpEmu Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+using SharpEmu.Logging;
 using System.Collections.Concurrent;
 
 namespace SharpEmu.HLE;
+
+public static class HostMainThread
+{
+    private static readonly SharpEmuLogger Log = SharpEmuLog.For("HLE.MainThread");
 
 /// <summary>
 /// Runs work on the real process main thread. macOS only allows AppKit (and
@@ -56,7 +61,7 @@ public static class HostMainThread
             }
             catch (Exception exception)
             {
-                Console.Error.WriteLine($"[LOADER][ERROR] Main-thread work failed: {exception}");
+                Log.Error($"Main-thread work failed: {exception}");
             }
         }
     }
@@ -70,7 +75,7 @@ public static class HostMainThread
         }
         catch (Exception exception)
         {
-            Console.Error.WriteLine($"[LOADER][WARN] Main-thread shutdown handler failed: {exception.Message}");
+            Log.Warn($"Main-thread shutdown handler failed: {exception.Message}");
         }
 
         _work.CompleteAdding();

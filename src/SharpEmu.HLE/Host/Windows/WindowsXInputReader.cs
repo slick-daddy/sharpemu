@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 using System.Runtime.InteropServices;
+using SharpEmu.Logging;
 
 namespace SharpEmu.HLE.Host.Windows;
 
@@ -41,6 +42,8 @@ public static partial class WindowsXInputReader
     private static byte _motorRight;
     private static byte _triggerLeft;
     private static byte _triggerRight;
+
+    private static readonly SharpEmuLogger Log = SharpEmuLog.For("HLE.XInput");
 
     /// <summary>Starts the background reader once; safe to call repeatedly.</summary>
     public static void EnsureStarted()
@@ -163,14 +166,14 @@ public static partial class WindowsXInputReader
                     SendRumbleLocked();
                 }
 
-                Console.Error.WriteLine("[LOADER][INFO] XInput (Xbox) controller connected.");
+                Log.Info("XInput (Xbox) controller connected.");
                 while (XInputGetState((uint)slot, out var state) == ErrorSuccess)
                 {
                     SetState(Translate(state.Gamepad));
                     Thread.Sleep(8);
                 }
 
-                Console.Error.WriteLine("[LOADER][INFO] XInput (Xbox) controller disconnected.");
+                Log.Info("XInput (Xbox) controller disconnected.");
                 lock (Gate)
                 {
                     _slot = -1;

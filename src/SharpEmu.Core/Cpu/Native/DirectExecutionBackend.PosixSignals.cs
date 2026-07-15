@@ -75,7 +75,7 @@ public sealed unsafe partial class DirectExecutionBackend
 	{
 		if (string.Equals(Environment.GetEnvironmentVariable("SHARPEMU_DISABLE_POSIX_SIGNALS"), "1", StringComparison.Ordinal))
 		{
-			Console.Error.WriteLine("[LOADER][WARN] POSIX signal exception bridge disabled by SHARPEMU_DISABLE_POSIX_SIGNALS=1; guest faults will not be recovered.");
+			Log.Warn("POSIX signal exception bridge disabled by SHARPEMU_DISABLE_POSIX_SIGNALS=1; guest faults will not be recovered.");
 			return;
 		}
 
@@ -89,7 +89,7 @@ public sealed unsafe partial class DirectExecutionBackend
 			Environment.GetEnvironmentVariable("SHARPEMU_DISABLE_RAW_HANDLER"), "1", StringComparison.Ordinal);
 		if (!_posixRawRecoveryEnabled)
 		{
-			Console.Error.WriteLine("[LOADER][INFO] Raw sentinel recovery disabled by SHARPEMU_DISABLE_RAW_HANDLER=1");
+			Log.Info("Raw sentinel recovery disabled by SHARPEMU_DISABLE_RAW_HANDLER=1");
 		}
 
 		WarmUpPosixSignalPath();
@@ -105,7 +105,7 @@ public sealed unsafe partial class DirectExecutionBackend
 		}
 
 		_posixSignalHandlersInstalled = true;
-		Console.Error.WriteLine("[LOADER][INFO] POSIX signal exception bridge installed (SIGSEGV/SIGBUS/SIGILL)");
+		Log.Info("POSIX signal exception bridge installed (SIGSEGV/SIGBUS/SIGILL)");
 	}
 
 	/// <summary>
@@ -177,7 +177,7 @@ public sealed unsafe partial class DirectExecutionBackend
 		if (sigaction(signal, action, previous) != 0)
 		{
 			NativeMemory.Free(previous);
-			Console.Error.WriteLine($"[LOADER][ERROR] sigaction({signal}) failed: errno={Marshal.GetLastPInvokeError()}");
+			Log.Error($"sigaction({signal}) failed: errno={Marshal.GetLastPInvokeError()}");
 			return false;
 		}
 
@@ -284,10 +284,9 @@ public sealed unsafe partial class DirectExecutionBackend
 			string.Equals(Environment.GetEnvironmentVariable("SHARPEMU_LOG_POSIX_SIGNALS"), "1", StringComparison.Ordinal));
 		if (traceSignal)
 		{
-			Console.Error.WriteLine(
-				$"[LOADER][TRACE] posix-signal#{traceIndex}: sig={signal} rip=0x{ReadCtxU64(contextRecord, CTX_RIP):X16} " +
+			Log.Trace(
+				$"posix-signal#{traceIndex}: sig={signal} rip=0x{ReadCtxU64(contextRecord, CTX_RIP):X16} " +
 				$"fault=0x{record.ExceptionInformation[1]:X16} access={record.ExceptionInformation[0]} rsp=0x{ReadCtxU64(contextRecord, CTX_RSP):X16}");
-			Console.Error.Flush();
 		}
 
 		// Sentinel recovery runs first: on Windows both vectored handlers see
@@ -304,9 +303,8 @@ public sealed unsafe partial class DirectExecutionBackend
 		}
 		if (traceSignal)
 		{
-			Console.Error.WriteLine(
-				$"[LOADER][TRACE] posix-signal#{traceIndex}: recovered={disposition == -1} new_rip=0x{ReadCtxU64(contextRecord, CTX_RIP):X16}");
-			Console.Error.Flush();
+			Log.Trace(
+				$"posix-signal#{traceIndex}: recovered={disposition == -1} new_rip=0x{ReadCtxU64(contextRecord, CTX_RIP):X16}");
 		}
 		if (disposition != -1 && !_posixSignalWarmup)
 		{

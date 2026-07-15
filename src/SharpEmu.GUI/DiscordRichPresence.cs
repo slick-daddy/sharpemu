@@ -1,6 +1,7 @@
 // Copyright (C) 2026 SharpEmu Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+using SharpEmu.Logging;
 using System.IO.Pipes;
 using System.Text;
 using System.Text.Json;
@@ -19,6 +20,7 @@ public sealed class DiscordRichPresence : IDisposable
     private const int OpFrame = 1;
     private const int MaxFrameBytes = 64 * 1024;
 
+    private static readonly SharpEmuLogger Log = SharpEmuLog.For("GUI.Discord");
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
@@ -227,13 +229,7 @@ public sealed class DiscordRichPresence : IDisposable
 
     private static void Trace(string message)
     {
-        if (string.Equals(
-                Environment.GetEnvironmentVariable("SHARPEMU_LOG_DISCORD"),
-                "1",
-                StringComparison.Ordinal))
-        {
-            Console.Error.WriteLine($"[DISCORD] {message}");
-        }
+        Log.Debug(message);
     }
 
     private void ClosePipe()

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 using System.Runtime.InteropServices;
+using SharpEmu.Logging;
 
 namespace SharpEmu.HLE.Host.Posix;
 
@@ -29,6 +30,8 @@ internal sealed unsafe class PosixHostMemory : IHostMemory
     private const uint PAGE_EXECUTE_READWRITE = 0x40;
 
     private const ulong PageSize = 0x1000;
+
+    private static readonly SharpEmuLogger Log = SharpEmuLog.For("HostMem");
 
     private struct BasicInfo
     {
@@ -559,7 +562,7 @@ internal sealed unsafe class PosixHostMemory : IHostMemory
         {
             if (string.Equals(Environment.GetEnvironmentVariable("SHARPEMU_LOG_VMEM"), "1", StringComparison.Ordinal))
             {
-                Console.Error.WriteLine($"[HOSTMEM] {message}");
+                Log.Trace(message);
             }
         }
 

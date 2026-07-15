@@ -35,12 +35,12 @@ public sealed partial class DirectExecutionBackend
 			{
 				throw new InvalidOperationException("Failed to create raw exception handler trampoline");
 			}
-			_rawExceptionHandler = (nint)AddVectoredExceptionHandler(1u, _rawExceptionHandlerStub);
-			Console.Error.WriteLine($"[LOADER][INFO] Raw exception handler installed: 0x{_rawExceptionHandler:X16}");
+			_rawExceptionHandler = _faultHandling.AddFirstChanceHandler(_rawExceptionHandlerStub);
+			Log.Info($"Raw exception handler installed: 0x{_rawExceptionHandler:X16}");
 		}
 		else
 		{
-			Console.Error.WriteLine("[LOADER][INFO] Raw exception handler disabled by SHARPEMU_DISABLE_RAW_HANDLER=1");
+			Log.Info("Raw exception handler disabled by SHARPEMU_DISABLE_RAW_HANDLER=1");
 		}
 
 		_handlerDelegate = VectoredHandler;
@@ -50,8 +50,8 @@ public sealed partial class DirectExecutionBackend
 		{
 			throw new InvalidOperationException("Failed to create exception handler trampoline");
 		}
-		_exceptionHandler = (nint)AddVectoredExceptionHandler(1u, _exceptionHandlerStub);
-		Console.Error.WriteLine($"[LOADER][INFO] Exception handler installed: 0x{_exceptionHandler:X16}");
+		_exceptionHandler = _faultHandling.AddFirstChanceHandler(_exceptionHandlerStub);
+		Log.Info($"Exception handler installed: 0x{_exceptionHandler:X16}");
 
 		_unhandledFilterDelegate = UnhandledExceptionFilter;
 		_unhandledFilterHandle = GCHandle.Alloc(_unhandledFilterDelegate);
@@ -68,14 +68,13 @@ public sealed partial class DirectExecutionBackend
 		try
 		{
 			EXCEPTION_RECORD* exceptionRecord = ((EXCEPTION_POINTERS*)exceptionInfo)->ExceptionRecord;
-			ulong rip = ReadCtxU64(((EXCEPTION_POINTERS*)exceptionInfo)->ContextRecord, 248);
-			ulong rsp = ReadCtxU64(((EXCEPTION_POINTERS*)exceptionInfo)->ContextRecord, 152);
-			Console.Error.WriteLine("[LOADER][FATAL] Unhandled exception filter fired.");
-			Console.Error.WriteLine($"[LOADER][FATAL]   Code: 0x{exceptionRecord->ExceptionCode:X8}");
-			Console.Error.WriteLine($"[LOADER][FATAL]   Exception Address: 0x{(ulong)(nint)exceptionRecord->ExceptionAddress:X16}");
-			Console.Error.WriteLine($"[LOADER][FATAL]   RIP: 0x{rip:X16}");
-			Console.Error.WriteLine($"[LOADER][FATAL]   RSP: 0x{rsp:X16}");
-			Console.Error.Flush();
+			ulong rip = ReadCtxU64(((EXCEPTION_POINTERS*)exceptionInfo)->ContextRecord, CTX_RIP);
+			ulong rsp = ReadCtxU64(((EXCEPTION_POINTERS*)exceptionInfo)->ContextRecord, CTX_RSP);
+			Log.Critical("Unhandled exception filter fired.");
+			Log.Critical($"  Code: 0x{exceptionRecord->ExceptionCode:X8}");
+			Log.Critical($"  Exception Address: 0x{(ulong)(nint)exceptionRecord->ExceptionAddress:X16}");
+			Log.Critical($"  RIP: 0x{rip:X16}");
+			Log.Critical($"  RSP: 0x{rsp:X16}");
 		}
 		catch
 		{
@@ -89,7 +88,6 @@ public sealed partial class DirectExecutionBackend
 		if (_vectoredHandlerDepth > 0)
 		{
 			LogNestedVectoredException(exceptionInfo);
-			Console.Error.Flush();
 			return 0;
 		}
 
@@ -103,8 +101,7 @@ public sealed partial class DirectExecutionBackend
 			void* contextRecord = ((EXCEPTION_POINTERS*)exceptionInfo)->ContextRecord;
 			if (contextRecord == null)
 			{
-				Console.Error.WriteLine("[LOADER][FATAL] ContextRecord is null!");
-				Console.Error.Flush();
+				Log.Critical("ContextRecord is null!");
 				return 0;
 			}
 
@@ -151,8 +148,7 @@ public sealed partial class DirectExecutionBackend
 					{
 						ulong p0 = exceptionRecord->NumberParameters >= 1 ? (*exceptionRecord->ExceptionInformation) : 0;
 						ulong p1 = exceptionRecord->NumberParameters >= 2 ? exceptionRecord->ExceptionInformation[1] : 0;
-						Console.Error.WriteLine($"[LOADER][TRACE] VEH_FASTFAIL code=0x{exceptionCode:X8} ex=0x{exceptionAddress:X16} rip=0x{rip:X16} rsp=0x{rsp:X16} p0=0x{p0:X16} p1=0x{p1:X16}");
-						Console.Error.Flush();
+						Log.Trace($"VEH_FASTFAIL code=0x{exceptionCode:X8} ex=0x{exceptionAddress:X16} rip=0x{rip:X16} rsp=0x{rsp:X16} p0=0x{p0:X16} p1=0x{p1:X16}");
 						break;
 					}
 			}
@@ -173,61 +169,39 @@ public sealed partial class DirectExecutionBackend
 			ulong r14 = ReadCtxU64(contextRecord, 232);
 			ulong r15 = ReadCtxU64(contextRecord, 240);
 
-			Console.Error.WriteLine("[LOADER][INFO] =========================================");
-			Console.Error.WriteLine("[LOADER][INFO] NATIVE EXCEPTION CAUGHT!");
-			Console.Error.WriteLine($"[LOADER][INFO]   Code: 0x{exceptionCode:X8}");
-			Console.Error.WriteLine($"[LOADER][INFO]   Exception Address: 0x{exceptionAddress:X16}");
-			Console.Error.WriteLine($"[LOADER][INFO]   RIP: 0x{rip:X16}");
-			Console.Error.WriteLine(
-				$"[LOADER][INFO]   Host thread: managed={Environment.CurrentManagedThreadId} " +
-				$"name='{Thread.CurrentThread.Name ?? "<unnamed>"}'");
+			Log.Info("=========================================");
+			Log.Info("NATIVE EXCEPTION CAUGHT!");
+			Log.Info($"  Code: 0x{exceptionCode:X8}");
+			Log.Info($"  Exception Address: 0x{exceptionAddress:X16}");
+			Log.Info($"  RIP: 0x{rip:X16}");
+			Log.Info($"  Host thread: managed={Environment.CurrentManagedThreadId} name='{Thread.CurrentThread.Name ?? "<unnamed>"}'");
 			if (_activeGuestThreadState is { } activeGuestThread)
 			{
-				Console.Error.WriteLine(
-					$"[LOADER][INFO]   Guest thread: handle=0x{activeGuestThread.ThreadHandle:X16} " +
-					$"name='{activeGuestThread.Name}' state={activeGuestThread.State} " +
-					$"last_import={activeGuestThread.LastImportNid ?? "<none>"} " +
-					$"last_ret=0x{activeGuestThread.LastReturnRip:X16}");
-				Console.Error.WriteLine(
-					$"[LOADER][INFO]   Last import registers: " +
-					$"rax=0x{Volatile.Read(ref activeGuestThread.LastImportRax):X16} " +
-					$"result_valid={Volatile.Read(ref activeGuestThread.LastImportResultValid) != 0} " +
-					$"rdi=0x{activeGuestThread.LastImportRdi:X16} " +
-					$"rsi=0x{activeGuestThread.LastImportRsi:X16} " +
-					$"rdx=0x{activeGuestThread.LastImportRdx:X16} " +
-					$"rcx=0x{activeGuestThread.LastImportRcx:X16} " +
-					$"r8=0x{activeGuestThread.LastImportR8:X16} " +
-					$"r9=0x{activeGuestThread.LastImportR9:X16}");
-				Console.Error.WriteLine(
-					$"[LOADER][INFO]   Last import stack args: " +
-					$"0=0x{activeGuestThread.LastImportStack0:X16} " +
-					$"1=0x{activeGuestThread.LastImportStack1:X16} " +
-					$"2=0x{activeGuestThread.LastImportStack2:X16} " +
-					$"3=0x{activeGuestThread.LastImportStack3:X16} " +
-					$"4=0x{activeGuestThread.LastImportStack4:X16} " +
-					$"5=0x{activeGuestThread.LastImportStack5:X16}");
+				Log.Info($"  Guest thread: handle=0x{activeGuestThread.ThreadHandle:X16} name='{activeGuestThread.Name}' state={activeGuestThread.State} last_import={activeGuestThread.LastImportNid ?? "<none>"} last_ret=0x{activeGuestThread.LastReturnRip:X16}");
+				Log.Info($"  Last import registers: rax=0x{Volatile.Read(ref activeGuestThread.LastImportRax):X16} result_valid={Volatile.Read(ref activeGuestThread.LastImportResultValid) != 0} rdi=0x{activeGuestThread.LastImportRdi:X16} rsi=0x{activeGuestThread.LastImportRsi:X16} rdx=0x{activeGuestThread.LastImportRdx:X16} rcx=0x{activeGuestThread.LastImportRcx:X16} r8=0x{activeGuestThread.LastImportR8:X16} r9=0x{activeGuestThread.LastImportR9:X16}");
+				Log.Info($"  Last import stack args: 0=0x{activeGuestThread.LastImportStack0:X16} 1=0x{activeGuestThread.LastImportStack1:X16} 2=0x{activeGuestThread.LastImportStack2:X16} 3=0x{activeGuestThread.LastImportStack3:X16} 4=0x{activeGuestThread.LastImportStack4:X16} 5=0x{activeGuestThread.LastImportStack5:X16}");
 			}
 			if (TryFormatNearestRuntimeSymbol(rip, out string symbol))
 			{
-				Console.Error.WriteLine("[LOADER][INFO]   RIP symbol: " + symbol);
+				Log.Info("  RIP symbol: " + symbol);
 			}
-			Console.Error.WriteLine($"[LOADER][INFO]   RAX: 0x{rax:X16}");
-			Console.Error.WriteLine($"[LOADER][INFO]   RBX: 0x{rbx:X16}");
-			Console.Error.WriteLine($"[LOADER][INFO]   RCX: 0x{rcx:X16}");
-			Console.Error.WriteLine($"[LOADER][INFO]   RDX: 0x{rdx:X16}");
-			Console.Error.WriteLine($"[LOADER][INFO]   RSI: 0x{rsi:X16}");
-			Console.Error.WriteLine($"[LOADER][INFO]   RDI: 0x{rdi:X16}");
-			Console.Error.WriteLine($"[LOADER][INFO]   RBP: 0x{rbp:X16}");
-			Console.Error.WriteLine($"[LOADER][INFO]   RSP: 0x{rsp:X16}");
-			Console.Error.WriteLine($"[LOADER][INFO]   R8 : 0x{r8:X16}");
-			Console.Error.WriteLine($"[LOADER][INFO]   R9 : 0x{r9:X16}");
-			Console.Error.WriteLine($"[LOADER][INFO]   R10: 0x{r10:X16}");
-			Console.Error.WriteLine($"[LOADER][INFO]   R11: 0x{r11:X16}");
-			Console.Error.WriteLine($"[LOADER][INFO]   R12: 0x{r12:X16}");
-			Console.Error.WriteLine($"[LOADER][INFO]   R13: 0x{r13:X16}");
-			Console.Error.WriteLine($"[LOADER][INFO]   R14: 0x{r14:X16}");
-			Console.Error.WriteLine($"[LOADER][INFO]   R15: 0x{r15:X16}");
-			Console.Error.WriteLine($"[LOADER][INFO]   Flags: 0x{exceptionFlags:X8}");
+			Log.Info($"  RAX: 0x{rax:X16}");
+			Log.Info($"  RBX: 0x{rbx:X16}");
+			Log.Info($"  RCX: 0x{rcx:X16}");
+			Log.Info($"  RDX: 0x{rdx:X16}");
+			Log.Info($"  RSI: 0x{rsi:X16}");
+			Log.Info($"  RDI: 0x{rdi:X16}");
+			Log.Info($"  RBP: 0x{rbp:X16}");
+			Log.Info($"  RSP: 0x{rsp:X16}");
+			Log.Info($"  R8 : 0x{r8:X16}");
+			Log.Info($"  R9 : 0x{r9:X16}");
+			Log.Info($"  R10: 0x{r10:X16}");
+			Log.Info($"  R11: 0x{r11:X16}");
+			Log.Info($"  R12: 0x{r12:X16}");
+			Log.Info($"  R13: 0x{r13:X16}");
+			Log.Info($"  R14: 0x{r14:X16}");
+			Log.Info($"  R15: 0x{r15:X16}");
+			Log.Info($"  Flags: 0x{exceptionFlags:X8}");
 
 			ulong accessType = 0;
 			ulong target = 0;
@@ -242,25 +216,25 @@ public sealed partial class DirectExecutionBackend
 					8uL => "execute",
 					_ => $"unknown({accessType})"
 				};
-				Console.Error.WriteLine("[LOADER][INFO]   AV access: " + accessText);
-				Console.Error.WriteLine($"[LOADER][INFO]   AV target: 0x{target:X16}");
-				if (VirtualQuery((void*)target, out var mbi, (nuint)sizeof(MEMORY_BASIC_INFORMATION64)) != 0)
+				Log.Info("  AV access: " + accessText);
+				Log.Info($"  AV target: 0x{target:X16}");
+				if (_hostMemory.Query(target, out var mbi))
 				{
-					Console.Error.WriteLine($"[LOADER][INFO]   AV target region: base=0x{mbi.BaseAddress:X16} size=0x{mbi.RegionSize:X16} state=0x{mbi.State:X08} protect=0x{mbi.Protect:X08}");
+					Log.Info($"  AV target region: base=0x{mbi.BaseAddress:X16} size=0x{mbi.RegionSize:X16} state=0x{mbi.RawState:X08} protect=0x{mbi.RawProtection:X08}");
 				}
 
 			}
 
-			Console.Error.WriteLine("[LOADER][INFO]   Stack qwords (RSP..):");
+			Log.Info("  Stack qwords (RSP..):");
 			for (int i = 0; i < 16; i++)
 			{
 				ulong stackAddr = rsp + (ulong)(i * 8);
 				if (!TryReadHostQword(stackAddr, out ulong value))
 				{
-					Console.Error.WriteLine("[LOADER][WARNING]   Could not read stack qwords.");
+					Log.Warning("  Could not read stack qwords.");
 					break;
 				}
-				Console.Error.WriteLine($"[LOADER][INFO]     [rsp+0x{i * 8:X2}] @0x{stackAddr:X16} = 0x{value:X16}");
+				Log.Info($"    [rsp+0x{i * 8:X2}] @0x{stackAddr:X16} = 0x{value:X16}");
 			}
 
 			if (string.Equals(
@@ -298,7 +272,7 @@ public sealed partial class DirectExecutionBackend
 
 			try
 			{
-				Console.Error.WriteLine("[LOADER][INFO]   Frame chain (RBP walk):");
+				Log.Info("  Frame chain (RBP walk):");
 				ulong frame = rbp;
 				for (int i = 0; i < 12; i++)
 				{
@@ -308,11 +282,11 @@ public sealed partial class DirectExecutionBackend
 					}
 					if (!TryReadHostQword(frame, out ulong next) || !TryReadHostQword(frame + 8, out ulong ret))
 					{
-						Console.Error.WriteLine("[LOADER][WARNING]   Could not walk RBP frame chain.");
+						Log.Warning("  Could not walk RBP frame chain.");
 						break;
 					}
 					string extra = TryFormatNearestRuntimeSymbol(ret, out string retSym) ? $" [{retSym}]" : string.Empty;
-					Console.Error.WriteLine($"[LOADER][INFO]     frame#{i}: rbp=0x{frame:X16} ret=0x{ret:X16}{extra} next=0x{next:X16}");
+					Log.Info($"    frame#{i}: rbp=0x{frame:X16} ret=0x{ret:X16}{extra} next=0x{next:X16}");
 					if (next <= frame)
 					{
 						break;
@@ -322,44 +296,44 @@ public sealed partial class DirectExecutionBackend
 			}
 			catch
 			{
-				Console.Error.WriteLine("[LOADER][WARNING]   Could not walk RBP frame chain.");
+				Log.Warning("  Could not walk RBP frame chain.");
 			}
 
 			switch (exceptionCode)
 			{
-				case 3221225477u:
-					Console.Error.WriteLine("[LOADER][ERROR]   Type: Access Violation");
-					Console.Error.WriteLine("[LOADER][ERROR]   This usually means:");
-					Console.Error.WriteLine("[LOADER][ERROR]     - Guest code called an unmapped import");
-					Console.Error.WriteLine("[LOADER][ERROR]     - Guest code accessed unmapped memory");
-					Console.Error.WriteLine("[LOADER][ERROR]     - Need to implement HLE for this NID");
+				case WindowsFaultCodes.AccessViolation:
+					Log.Error("  Type: Access Violation");
+					Log.Error("  This usually means:");
+					Log.Error("    - Guest code called an unmapped import");
+					Log.Error("    - Guest code accessed unmapped memory");
+					Log.Error("    - Need to implement HLE for this NID");
 					byte[] code = new byte[16];
 					if (TryReadHostBytes(rip, code))
 					{
-						Console.Error.WriteLine("[LOADER][INFO]   Code at RIP: " + BitConverter.ToString(code).Replace("-", " "));
+						Log.Info("  Code at RIP: " + BitConverter.ToString(code).Replace("-", " "));
 						if (code[0] == 100)
 						{
-							Console.Error.WriteLine("[LOADER][ERROR]   Detected FS segment prefix - TLS access not patched!");
+							Log.Error("  Detected FS segment prefix - TLS access not patched!");
 						}
 						else if (code[0] == 101)
 						{
-							Console.Error.WriteLine("[LOADER][ERROR]   Detected GS segment prefix - TLS access not patched!");
+							Log.Error("  Detected GS segment prefix - TLS access not patched!");
 						}
 						else if (code[0] == 197 || code[0] == 196)
 						{
-							Console.Error.WriteLine("[LOADER][INFO]   Detected AVX instruction - check CPU support!");
-							Console.Error.WriteLine($"[LOADER][INFO]   RBP: 0x{rbp:X16} (mod 16 = {rbp % 16})");
-							Console.Error.WriteLine($"[LOADER][INFO]   RSP: 0x{rsp:X16} (mod 16 = {rsp % 16})");
+							Log.Info("  Detected AVX instruction - check CPU support!");
+							Log.Info($"  RBP: 0x{rbp:X16} (mod 16 = {rbp % 16})");
+							Log.Info($"  RSP: 0x{rsp:X16} (mod 16 = {rsp % 16})");
 						}
 						byte[] before = new byte[16];
 						if (rip > 16 && TryReadHostBytes(rip - 16, before))
 						{
-							Console.Error.WriteLine("[LOADER][INFO]   Code before RIP: " + BitConverter.ToString(before).Replace("-", " "));
+							Log.Info("  Code before RIP: " + BitConverter.ToString(before).Replace("-", " "));
 						}
 						byte[] window = new byte[64];
 						if (rip > 32 && TryReadHostBytes(rip - 32, window))
 						{
-							Console.Error.WriteLine("[LOADER][INFO]   Code window [RIP-0x20..]: " + BitConverter.ToString(window).Replace("-", " "));
+							Log.Info("  Code window [RIP-0x20..]: " + BitConverter.ToString(window).Replace("-", " "));
 						}
 						for (var stackIndex = 0; stackIndex < 16; stackIndex++)
 						{
@@ -384,7 +358,7 @@ public sealed partial class DirectExecutionBackend
 					}
 					else
 					{
-						Console.Error.WriteLine("[LOADER][ERROR]   Could not read code at RIP");
+						Log.Error("  Could not read code at RIP");
 					}
 					DumpRecentImportTrace();
 					DumpGuestDisasmDiagnostics(rip, rbp, rsp);
@@ -394,29 +368,16 @@ public sealed partial class DirectExecutionBackend
 					DumpGuestReferenceDiagnostics();
 					DumpGuestPointerWindowDiagnostics();
 					break;
-				case 2147483651u:
-					Console.Error.WriteLine("[LOADER][WARNING]   Type: Breakpoint (int3)");
-					Console.Error.WriteLine("[LOADER][WARNING]   Unexpected breakpoint in direct-bridge mode");
+				case WindowsFaultCodes.Breakpoint:
+					Log.Warning("  Type: Breakpoint (int3)");
+					Log.Warning("  Unexpected breakpoint in direct-bridge mode");
 					break;
-				case 1073741845u:
-					Console.Error.WriteLine("[LOADER][ERROR]   Type: Abort (SIGABRT)");
-					DumpRecentImportTrace();
-					DumpGuestDisasmDiagnostics(rip, rbp, rsp);
-					break;
-				case 3221225501u:
-					Console.Error.WriteLine("[LOADER][INFO]   Type: Illegal Instruction");
-					byte[] illegalCode = new byte[16];
-					if (TryReadHostBytes(rip, illegalCode))
-					{
-						Console.Error.WriteLine("[LOADER][INFO]   Code at RIP: " + BitConverter.ToString(illegalCode).Replace("-", " "));
-					}
-					DumpRecentImportTrace();
-					DumpGuestDisasmDiagnostics(rip, rbp, rsp);
+				case WindowsFaultCodes.IllegalInstruction:
+					Log.Info("  Type: Illegal Instruction");
 					break;
 			}
 
-			Console.Error.WriteLine("[LOADER][INFO] =========================================");
-			Console.Error.Flush();
+			Log.Info("=========================================");
 			return 0;
 		}
 		finally
@@ -549,12 +510,12 @@ public sealed partial class DirectExecutionBackend
 			ulong rsp = contextRecord != null ? ReadCtxU64(contextRecord, 152) : 0;
 			ulong accessType = record->NumberParameters >= 1 ? *record->ExceptionInformation : 0;
 			ulong target = record->NumberParameters >= 2 ? record->ExceptionInformation[1] : 0;
-			Console.Error.WriteLine(
-				$"[LOADER][TRACE] Nested VEH exception#{count}: code=0x{record->ExceptionCode:X8} ex=0x{(ulong)record->ExceptionAddress:X16} rip=0x{rip:X16} rsp=0x{rsp:X16} type={accessType} target=0x{target:X16}; passing through.");
+			Log.Trace(
+				$"Nested VEH exception#{count}: code=0x{record->ExceptionCode:X8} ex=0x{(ulong)record->ExceptionAddress:X16} rip=0x{rip:X16} rsp=0x{rsp:X16} type={accessType} target=0x{target:X16}; passing through.");
 		}
 		catch
 		{
-			Console.Error.WriteLine($"[LOADER][TRACE] Nested VEH exception#{count}; passing through.");
+			Log.Trace($"Nested VEH exception#{count}; passing through.");
 		}
 	}
 
@@ -569,8 +530,7 @@ public sealed partial class DirectExecutionBackend
 			{
 				return;
 			}
-			Console.Error.WriteLine($"[LOADER][TRACE] VEH_AV repeat#{_lastAvTraceRepeatCount} at 0x{exceptionAddress:X16} type={accessType} target=0x{target:X16}");
-			Console.Error.Flush();
+			Log.Trace($"VEH_AV repeat#{_lastAvTraceRepeatCount} at 0x{exceptionAddress:X16} type={accessType} target=0x{target:X16}");
 			return;
 		}
 
@@ -578,8 +538,7 @@ public sealed partial class DirectExecutionBackend
 		_lastAvTraceType = accessType;
 		_lastAvTraceTarget = target;
 		_lastAvTraceRepeatCount = 1;
-		Console.Error.WriteLine($"[LOADER][TRACE] VEH_AV first-chance at 0x{exceptionAddress:X16} type={accessType} target=0x{target:X16}");
-		Console.Error.Flush();
+		Log.Trace($"VEH_AV first-chance at 0x{exceptionAddress:X16} type={accessType} target=0x{target:X16}");
 	}
 
 	private void DumpGuestInstructionStream(string name, ulong startRip, int maxInstructions)
@@ -589,19 +548,19 @@ public sealed partial class DirectExecutionBackend
 			return;
 		}
 
-		Console.Error.WriteLine($"[LOADER][INFO]   {name} disasm @0x{startRip:X16}:");
+		Log.Info($"  {name} disasm @0x{startRip:X16}:");
 		ulong rip = startRip;
 		for (int i = 0; i < maxInstructions; i++)
 		{
 			if (!IcedDecoder.TryReadGuestBytes(_cpuContext.Memory, rip, maxLen: 15, out var bytes) ||
 				!IcedDecoder.TryDecode(rip, bytes, out var instruction))
 			{
-				Console.Error.WriteLine($"[LOADER][INFO]     0x{rip:X16}: <decode-failed>");
+				Log.Info($"    0x{rip:X16}: <decode-failed>");
 				break;
 			}
 
-			Console.Error.WriteLine(
-				$"[LOADER][INFO]     0x{instruction.Rip:X16}: {instruction.Text} bytes={IcedDecoder.FormatBytes(instruction.Bytes)}");
+			Log.Info(
+				$"    0x{instruction.Rip:X16}: {instruction.Text} bytes={IcedDecoder.FormatBytes(instruction.Bytes)}");
 			rip += (ulong)instruction.Length;
 		}
 	}
@@ -653,7 +612,7 @@ public sealed partial class DirectExecutionBackend
 		}
 		catch
 		{
-			Console.Error.WriteLine("[LOADER][WARNING]   Could not dump disasm diagnostics.");
+			Log.Warning("  Could not dump disasm diagnostics.");
 		}
 
 		var extraAddresses = Environment.GetEnvironmentVariable("SHARPEMU_LOG_DISASM_ADDRS");
@@ -688,8 +647,8 @@ public sealed partial class DirectExecutionBackend
 		const ulong scanEnd = 0x0000000810000000UL;
 		const int maxHitsPerTarget = 24;
 
-		Console.Error.WriteLine(
-			$"[LOADER][INFO]   Ref scan targets: {string.Join(", ", targetList.ConvertAll(static addr => $"0x{addr:X16}"))}");
+		Log.Info(
+			$"  Ref scan targets: {string.Join(", ", targetList.ConvertAll(static addr => $"0x{addr:X16}"))}");
 
 		var hitCounts = new Dictionary<ulong, int>(targetList.Count);
 		for (var i = 0; i < targetList.Count; i++)
@@ -742,7 +701,7 @@ public sealed partial class DirectExecutionBackend
 			var target = targetList[i];
 			if (!hitCounts.TryGetValue(target, out var count) || count == 0)
 			{
-				Console.Error.WriteLine($"[LOADER][INFO]   Ref scan 0x{target:X16}: none");
+				Log.Info($"  Ref scan 0x{target:X16}: none");
 			}
 		}
 	}
@@ -860,8 +819,8 @@ public sealed partial class DirectExecutionBackend
 					}
 
 					hitCounts[target] = count + 1;
-					Console.Error.WriteLine(
-						$"[LOADER][INFO]   Ref scan hit target=0x{target:X16} rip=0x{instruction.Rip:X16} text={instruction.Text} bytes={IcedDecoder.FormatBytes(instruction.Bytes)}");
+					Log.Info(
+						$"  Ref scan hit target=0x{target:X16} rip=0x{instruction.Rip:X16} text={instruction.Text} bytes={IcedDecoder.FormatBytes(instruction.Bytes)}");
 				}
 			}
 
@@ -908,17 +867,17 @@ public sealed partial class DirectExecutionBackend
 		List<ulong> hits = ScanSuspiciousResolverPointers(scanStart, scanEnd);
 		if (hits.Count == 0)
 		{
-			Console.Error.WriteLine($"[LOADER][INFO]   {name} unresolved scan: none");
+			Log.Info($"  {name} unresolved scan: none");
 			return;
 		}
 
-		Console.Error.WriteLine($"[LOADER][INFO]   {name} unresolved scan hits: {hits.Count}");
+		Log.Info($"  {name} unresolved scan hits: {hits.Count}");
 		for (int i = 0; i < hits.Count && i < 8; i++)
 		{
 			ulong slotAddress = hits[i];
 			if (TryReadQword(slotAddress, out var value))
 			{
-				Console.Error.WriteLine($"[LOADER][INFO]     hit#{i}: slot=0x{slotAddress:X16} value=0x{value:X16}");
+				Log.Info($"    hit#{i}: slot=0x{slotAddress:X16} value=0x{value:X16}");
 			}
 		}
 	}
@@ -933,7 +892,7 @@ public sealed partial class DirectExecutionBackend
 		byte[] buffer = new byte[size];
 		if (!_cpuContext.Memory.TryRead(baseAddress, buffer))
 		{
-			Console.Error.WriteLine($"[LOADER][INFO]   {name} sentinel-pattern scan: unreadable");
+			Log.Info($"  {name} sentinel-pattern scan: unreadable");
 			return;
 		}
 
@@ -960,11 +919,11 @@ public sealed partial class DirectExecutionBackend
 
 		if (hits.Count == 0)
 		{
-			Console.Error.WriteLine($"[LOADER][INFO]   {name} sentinel-pattern scan: none");
+			Log.Info($"  {name} sentinel-pattern scan: none");
 			return;
 		}
 
-		Console.Error.WriteLine($"[LOADER][INFO]   {name} sentinel-pattern hits: {string.Join(", ", hits.GetRange(0, Math.Min(hits.Count, 12)))}");
+		Log.Info($"  {name} sentinel-pattern hits: {string.Join(", ", hits.GetRange(0, Math.Min(hits.Count, 12)))}");
 	}
 
 	private void DumpReturnTargetCandidates(ulong rsp)
@@ -975,18 +934,18 @@ public sealed partial class DirectExecutionBackend
 		}
 
 		ulong start = rsp >= 0x10 ? rsp - 0x10 : rsp;
-		Console.Error.WriteLine($"[LOADER][INFO]   Return-target candidates near RSP=0x{rsp:X16}:");
+		Log.Info($"  Return-target candidates near RSP=0x{rsp:X16}:");
 		for (int offset = 0; offset <= 0x20; offset++)
 		{
 			ulong address = start + (ulong)offset;
 			try
 			{
 				ulong value = (ulong)Marshal.ReadInt64((nint)address);
-				Console.Error.WriteLine($"[LOADER][INFO]     [0x{address:X16}] -> 0x{value:X16}");
+				Log.Info($"    [0x{address:X16}] -> 0x{value:X16}");
 			}
 			catch
 			{
-				Console.Error.WriteLine($"[LOADER][INFO]     [0x{address:X16}] -> <unreadable>");
+				Log.Info($"    [0x{address:X16}] -> <unreadable>");
 				break;
 			}
 		}
@@ -1007,7 +966,7 @@ public sealed partial class DirectExecutionBackend
 				continue;
 			}
 
-			Console.Error.WriteLine($"[LOADER][INFO]   {name}+0x{offset:X2} target = {FormatPointerWithNearestSymbol(target)}");
+			Log.Info($"  {name}+0x{offset:X2} target = {FormatPointerWithNearestSymbol(target)}");
 			DumpPointerWindow($"{name}+0x{offset:X2}", target, windowSize);
 			DumpUnresolvedSentinelWindow($"{name}+0x{offset:X2}", target, 0x80);
 		}
@@ -1033,11 +992,11 @@ public sealed partial class DirectExecutionBackend
 	{
 		if (!TryReadQword(slotAddress, out var value))
 		{
-			Console.Error.WriteLine($"[LOADER][INFO]   {name} @0x{slotAddress:X16} = <unreadable>");
+			Log.Info($"  {name} @0x{slotAddress:X16} = <unreadable>");
 			return;
 		}
 
-		Console.Error.WriteLine($"[LOADER][INFO]   {name} @0x{slotAddress:X16} = {FormatPointerWithNearestSymbol(value)}");
+		Log.Info($"  {name} @0x{slotAddress:X16} = {FormatPointerWithNearestSymbol(value)}");
 	}
 	private void DumpPointerWindow(string name, ulong baseAddress, int size)
 	{
@@ -1046,17 +1005,17 @@ public sealed partial class DirectExecutionBackend
 			return;
 		}
 
-		Console.Error.WriteLine($"[LOADER][INFO]   {name} window @0x{baseAddress:X16}:");
+		Log.Info($"  {name} window @0x{baseAddress:X16}:");
 		for (int offset = 0; offset < size; offset += 8)
 		{
 			ulong slotAddress = baseAddress + (ulong)offset;
 			if (!TryReadQword(slotAddress, out var value))
 			{
-				Console.Error.WriteLine($"[LOADER][INFO]     +0x{offset:X2}: <unreadable>");
+				Log.Info($"    +0x{offset:X2}: <unreadable>");
 				break;
 			}
 
-			Console.Error.WriteLine($"[LOADER][INFO]     +0x{offset:X2}: {FormatPointerWithNearestSymbol(value)}");
+			Log.Info($"    +0x{offset:X2}: {FormatPointerWithNearestSymbol(value)}");
 		}
 	}
 
@@ -1252,14 +1211,14 @@ public sealed partial class DirectExecutionBackend
 		bool traceLazyCommit = ShouldTraceLazyCommit(traceIndex);
 		if (traceLazyCommit)
 		{
-			Console.Error.WriteLine($"[LOADER][TRACE] lazy-query#{traceIndex}: fault=0x{faultAddress:X16} owner={owner} rip=0x{rip:X16} rsp=0x{rsp:X16} state=0x{mbi.State:X08} base=0x{mbi.BaseAddress:X16} size=0x{mbi.RegionSize:X16} alloc=0x{mbi.AllocationProtect:X08} prot=0x{mbi.Protect:X08}");
+			Log.Trace($"lazy-query#{traceIndex}: fault=0x{faultAddress:X16} owner={owner} rip=0x{rip:X16} rsp=0x{rsp:X16} state=0x{mbi.RawState:X08} base=0x{mbi.BaseAddress:X16} size=0x{mbi.RegionSize:X16} alloc=0x{mbi.RawAllocationProtection:X08} prot=0x{mbi.RawProtection:X08}");
 		}
 
 		if (mbi.State == 4096 && IsAccessCompatible(accessType, mbi.Protect))
 		{
 			if (traceLazyCommit)
 			{
-				Console.Error.WriteLine($"[LOADER][TRACE] lazy-commit-race#{traceIndex}: fault=0x{faultAddress:X16} protect=0x{mbi.Protect:X08}");
+				Log.Trace($"lazy-commit-race#{traceIndex}: fault=0x{faultAddress:X16} protect=0x{mbi.RawProtection:X08}");
 			}
 			return true;
 		}
@@ -1313,7 +1272,7 @@ public sealed partial class DirectExecutionBackend
 			TryCommitRange(pageBase + 4096, 4096uL, commitProtect);
 			if (traceLazyCommit)
 			{
-				Console.Error.WriteLine($"[LOADER][TRACE] lazy-reserve-commit#{traceIndex}: addr=0x{committedBase:X16} size=0x{committedSize:X16} access={accessType} protect=0x{commitProtect:X8}");
+				Log.Trace($"lazy-reserve-commit#{traceIndex}: addr=0x{committedBase:X16} size=0x{committedSize:X16} access={accessType} protect=0x{commitProtect:X8}");
 			}
 			return true;
 		}
@@ -1372,7 +1331,7 @@ public sealed partial class DirectExecutionBackend
 		TryCommitRange(pageBase + 4096, 4096uL, commitProtect);
 		if (traceLazyCommit)
 		{
-			Console.Error.WriteLine($"[LOADER][TRACE] lazy-commit#{traceIndex}: addr=0x{committedBase:X16} size=0x{committedSize:X16} access={accessType} protect=0x{commitProtect:X8}");
+			Log.Trace($"lazy-commit#{traceIndex}: addr=0x{committedBase:X16} size=0x{committedSize:X16} access={accessType} protect=0x{commitProtect:X8}");
 		}
 		return true;
 

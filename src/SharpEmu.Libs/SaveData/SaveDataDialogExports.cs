@@ -3,11 +3,13 @@
 
 using SharpEmu.HLE;
 using System.Buffers.Binary;
+using SharpEmu.Logging;
 
 namespace SharpEmu.Libs.SaveData;
 
 public static class SaveDataDialogExports
 {
+    private static readonly SharpEmuLogger Log = SharpEmuLog.For("Libs.SaveData");
     private const int StatusNone = 0;
     private const int StatusInitialized = 1;
     private const int StatusRunning = 2;
@@ -196,11 +198,6 @@ public static class SaveDataDialogExports
 
     private static void TraceSaveDataDialog(string message)
     {
-        if (!string.Equals(Environment.GetEnvironmentVariable("SHARPEMU_LOG_SAVEDATA"), "1", StringComparison.Ordinal))
-        {
-            return;
-        }
-
-        Console.Error.WriteLine($"[LOADER][TRACE] save_data_dialog.{message}");
+        Log.Trace($"save_data_dialog.{message}");
     }
 }

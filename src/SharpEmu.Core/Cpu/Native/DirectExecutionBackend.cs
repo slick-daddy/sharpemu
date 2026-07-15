@@ -24,9 +24,9 @@ public sealed unsafe partial class DirectExecutionBackend : INativeCpuBackend, I
 
 	private static void TraceThreadMode(string message)
 	{
-		Console.Error.WriteLine(
-			$"[THREADMODE] {message} tid={GetCurrentThreadId()} managed={Environment.CurrentManagedThreadId}");
-		Console.Error.Flush();
+		var threading = _activeExecutionBackend?._hostThreading ?? HostPlatform.Current.Threading;
+		Log.Info(
+			$"[THREADMODE] {message} cycle={_threadModeCycleId} tid={threading.CurrentThreadId} managed={Environment.CurrentManagedThreadId}");
 	}
 
 	private const int ImportLoopHistoryLength = 2048;
@@ -824,6 +824,22 @@ public sealed unsafe partial class DirectExecutionBackend : INativeCpuBackend, I
 
 	private const uint MEM_RELEASE = 32768u;
 
+	[ThreadStatic]
+	private static int _threadModeGatewayDepth;
+
+	[ThreadStatic]
+	private static long _threadModeGatewayCalls;
+
+	[ThreadStatic]
+	private static bool _threadModeGatewayFirstLogged;
+
+	private static void TraceThreadMode(string message)
+	{
+		var threading = _activeExecutionBackend?._hostThreading ?? HostPlatform.Current.Threading;
+		Log.Info(
+			$"[THREADMODE] {message} cycle={_threadModeCycleId} tid={threading.CurrentThreadId} managed={Environment.CurrentManagedThreadId}");
+	}
+
 	private const uint PAGE_EXECUTE = 16u;
 
 	private const uint PAGE_EXECUTE_WRITECOPY = 128u;
@@ -1048,11 +1064,11 @@ public sealed unsafe partial class DirectExecutionBackend : INativeCpuBackend, I
 
 	public bool TryExecute(CpuContext context, ulong entryPoint, Generation generation, IReadOnlyDictionary<ulong, string> importStubs, IReadOnlyDictionary<string, ulong> runtimeSymbols, CpuExecutionOptions executionOptions, out OrbisGen2Result result)
 	{
-		Console.Error.WriteLine("[LOADER][INFO] === Execute START ===");
-		Console.Error.WriteLine($"[LOADER][INFO] EntryPoint: 0x{entryPoint:X16}, ImportStubs: {importStubs.Count}");
-		Console.Error.WriteLine($"[LOADER][INFO] RuntimeSymbols: {runtimeSymbols.Count}");
-		Console.Error.WriteLine(_moduleManager.TryGetExport("QrZZdJ8XsX0", out ExportedFunction export) ? ("[LOADER][INFO] ExportCheck fputs: " + export.LibraryName + ":" + export.Name) : "[LOADER][INFO] ExportCheck fputs: MISSING");
-		Console.Error.WriteLine(_moduleManager.TryGetExport("L-Q3LEjIbgA", out ExportedFunction export2) ? ("[LOADER][INFO] ExportCheck map_direct: " + export2.LibraryName + ":" + export2.Name) : "[LOADER][INFO] ExportCheck map_direct: MISSING");
+		Log.Info("=== Execute START ===");
+		Log.Info($"EntryPoint: 0x{entryPoint:X16}, ImportStubs: {importStubs.Count}");
+		Log.Info($"RuntimeSymbols: {runtimeSymbols.Count}");
+		Log.Info(_moduleManager.TryGetExport("QrZZdJ8XsX0", out ExportedFunction export) ? "ExportCheck fputs: " + export.LibraryName + ":" + export.Name : "ExportCheck fputs: MISSING");
+		Log.Info(_moduleManager.TryGetExport("L-Q3LEjIbgA", out ExportedFunction export2) ? "ExportCheck map_direct: " + export2.LibraryName + ":" + export2.Name : "ExportCheck map_direct: MISSING");
 		_entryPoint = entryPoint;
 		_cpuContext = context;
 		_returnFallbackTarget = context[CpuRegister.Rsi];
@@ -1135,8 +1151,8 @@ public sealed unsafe partial class DirectExecutionBackend : INativeCpuBackend, I
 		catch (Exception ex)
 		{
 			LastError = "Exception in TryExecute: " + ex.GetType().Name + ": " + ex.Message;
-			Console.Error.WriteLine("[LOADER][ERROR] " + LastError);
-			Console.Error.WriteLine("[LOADER][ERROR] Stack trace: " + ex.StackTrace);
+			Log.Error(LastError ?? "null");
+			Log.Error("Stack trace: " + ex.StackTrace);
 			result = OrbisGen2Result.ORBIS_GEN2_ERROR_CPU_TRAP;
 			return false;
 		}
@@ -1144,7 +1160,7 @@ public sealed unsafe partial class DirectExecutionBackend : INativeCpuBackend, I
 		{
 			HostSessionControl.SetShutdownHandler(null);
 			GuestThreadExecution.Scheduler = previousGuestThreadScheduler;
-			Console.Error.WriteLine("[LOADER][INFO] === Execute END (LastError: " + (LastError ?? "null") + ") ===");
+			Log.Info("=== Execute END (LastError: " + (LastError ?? "null") + ") ===");
 		}
 	}
 
@@ -1154,12 +1170,12 @@ public sealed unsafe partial class DirectExecutionBackend : INativeCpuBackend, I
 		LastError = string.IsNullOrWhiteSpace(reason)
 			? "Host shutdown requested."
 			: $"Host shutdown requested: {reason}";
-		Console.Error.WriteLine($"[LOADER][INFO] {LastError}");
+		Log.Info(LastError ?? "null");
 	}
 
 	private bool SetupImportStubs(IReadOnlyDictionary<ulong, string> importStubs)
 	{
-		Console.Error.WriteLine($"[LOADER][INFO] Setting up {importStubs.Count} import stubs...");
+		Log.Info($"Setting up {importStubs.Count} import stubs...");
 		ClearImportHandlerTrampolines();
 		_importEntries = new ImportStubEntry[importStubs.Count];
 		HashSet<ulong> hashSet = new HashSet<ulong>(importStubs.Keys);
@@ -1182,19 +1198,16 @@ public sealed unsafe partial class DirectExecutionBackend : INativeCpuBackend, I
 			{
 				if (resolvedExport is not null)
 				{
-					Console.Error.WriteLine($"[LOADER][INFO] ImportStubMap: 0x{num4:X16} -> {resolvedExport.LibraryName}:{resolvedExport.Name} ({text2})");
+					Log.Info($"ImportStubMap: 0x{num4:X16} -> {resolvedExport.LibraryName}:{resolvedExport.Name} ({text2})");
 				}
 				else
 				{
-					Console.Error.WriteLine($"[LOADER][INFO] ImportStubMap: 0x{num4:X16} -> {text2}");
+					Log.Info($"ImportStubMap: 0x{num4:X16} -> {text2}");
 				}
 			}
 			if (TryResolveDirectImportTarget(text2, out var targetAddress, out var resolvedSymbol) && !hashSet.Contains(targetAddress))
 			{
-				if (_logAllImports)
-				{
-					Console.Error.WriteLine($"[LOADER][DEBUG] SetupImportStubs: Direct bridge for {text2} -> 0x{targetAddress:X16}");
-				}
+				Log.Debug($"SetupImportStubs: Direct bridge for {text2} -> 0x{targetAddress:X16}");
 				if (!PatchImportStub((nint)(long)num4, (nint)(long)targetAddress))
 				{
 					LastError = $"Failed to patch direct import stub at 0x{num4:X16}";
@@ -1204,8 +1217,8 @@ public sealed unsafe partial class DirectExecutionBackend : INativeCpuBackend, I
 				num2++;
 				if (num3 <= 48)
 				{
-					Console.Error.WriteLine(
-						$"[LOADER][INFO] LLE redirect: 0x{num4:X16} {text2} -> {resolvedSymbol}@0x{targetAddress:X16}");
+					Log.Info(
+						$"LLE redirect: 0x{num4:X16} {text2} -> {resolvedSymbol}@0x{targetAddress:X16}");
 				}
 				num++;
 				continue;
@@ -1227,10 +1240,7 @@ public sealed unsafe partial class DirectExecutionBackend : INativeCpuBackend, I
 				LastError = "Failed to create import trampoline for NID " + text2;
 				return false;
 			}
-			if (_logAllImports)
-			{
-				Console.Error.WriteLine($"[LOADER][DEBUG] SetupImportStubs: Trampoline for {text2} -> 0x{num5:X16}");
-			}
+			Log.Debug($"SetupImportStubs: Trampoline for {text2} -> 0x{num5:X16}");
 			if (!PatchImportStub((nint)num4, num5))
 			{
 				LastError = $"Failed to patch import stub at 0x{num4:X16}";
@@ -1239,7 +1249,7 @@ public sealed unsafe partial class DirectExecutionBackend : INativeCpuBackend, I
 			num2++;
 			num++;
 		}
-		Console.Error.WriteLine($"[LOADER][INFO] Setup {num2}/{importStubs.Count} import stubs (direct bridge, lle_redirects={num3})");
+		Log.Info($"Setup {num2}/{importStubs.Count} import stubs (direct bridge, lle_redirects={num3})");
 		return num2 == importStubs.Count;
 	}
 
@@ -1490,10 +1500,7 @@ public sealed unsafe partial class DirectExecutionBackend : INativeCpuBackend, I
 		{
 			if (IsKernelLibrary(export.LibraryName))
 			{
-				if (_logAllImports)
-				{
-					Console.Error.WriteLine($"[LOADER][DEBUG] TryResolveDirectImportTarget: {nid} ({export.LibraryName}:{export.Name}) -> HLE (kernel library)");
-				}
+				Log.Debug($"TryResolveDirectImportTarget: {nid} ({export.LibraryName}:{export.Name}) -> HLE (kernel library)");
 				return false;
 			}
 			if (!IsLibcLibrary(export.LibraryName) || !PreferLleForLibcExport(export.Name))
@@ -1518,19 +1525,13 @@ public sealed unsafe partial class DirectExecutionBackend : INativeCpuBackend, I
 			return false;
 		}
 
-		if (_logAllImports)
-		{
-			Console.Error.WriteLine($"[LOADER][DEBUG] TryResolveDirectImportTarget: {nid} not in HLE table, checking runtime symbols...");
-		}
+		Log.Debug($"TryResolveDirectImportTarget: {nid} not in HLE table, checking runtime symbols...");
 
 		if (TryResolveRuntimeSymbolAddress(nid, out var directValue) && IsDirectImportTargetUsable(directValue))
 		{
 			targetAddress = directValue;
 			resolvedSymbol = nid;
-			if (_logAllImports)
-			{
-				Console.Error.WriteLine($"[LOADER][DEBUG] TryResolveDirectImportTarget: {nid} -> runtime symbol 0x{targetAddress:X16}");
-			}
+			Log.Debug($"TryResolveDirectImportTarget: {nid} -> runtime symbol 0x{targetAddress:X16}");
 			return true;
 		}
 
@@ -2105,11 +2106,14 @@ public sealed unsafe partial class DirectExecutionBackend : INativeCpuBackend, I
 			ptr2[num++] = 65;
 			ptr2[num++] = 95;
 			ptr2[num++] = 195;
-			Debug.Assert(num <= 512, "Import handler trampoline exceeded its allocation.");
-			uint num2 = default(uint);
-			VirtualProtect(ptr, 512u, 32u, &num2);
-			FlushInstructionCache(GetCurrentProcess(), ptr, 512u);
-			return (nint)ptr;
+		uint num2 = default(uint);
+		if (!_hostMemory.Protect((ulong)ptr, 256u, HostPageProtection.ReadExecute, out num2))
+		{
+			Log.Error($"VirtualProtect failed for import dispatch stub at 0x{(nint)ptr:X16}");
+			return 0;
+		}
+		_hostMemory.FlushInstructionCache((ulong)ptr, 256u);
+		return (nint)ptr;
 		}
 		catch
 		{
@@ -2122,7 +2126,7 @@ public sealed unsafe partial class DirectExecutionBackend : INativeCpuBackend, I
 		uint flNewProtect = default(uint);
 		if (!VirtualProtect((void*)address, 16u, 64u, &flNewProtect))
 		{
-			Console.Error.WriteLine($"[LOADER][ERROR] VirtualProtect failed for import stub at 0x{address:X16}");
+			Log.Error($"VirtualProtect failed for import stub at 0x{address:X16}");
 			return false;
 		}
 		try
@@ -2218,9 +2222,13 @@ public sealed unsafe partial class DirectExecutionBackend : INativeCpuBackend, I
 		tlsHandlerAddress[num++] = 0xC3;                    // ret
 		_tlsPatchStubOffset = (num + 15) & ~15;
 		uint num2 = default(uint);
-		VirtualProtect((void*)_tlsHandlerAddress, TlsHandlerRegionSize, 32u, &num2);
-		FlushInstructionCache(GetCurrentProcess(), (void*)_tlsHandlerAddress, TlsHandlerRegionSize);
-		Console.Error.WriteLine($"[LOADER][INFO] TLS handler at 0x{_tlsHandlerAddress:X16}");
+		if (!_hostMemory.Protect((ulong)(void*)_tlsHandlerAddress, TlsHandlerRegionSize, HostPageProtection.ReadExecute, out num2))
+		{
+			Log.Error($"VirtualProtect failed for TLS handler at 0x{_tlsHandlerAddress:X16}");
+			return;
+		}
+		_hostMemory.FlushInstructionCache((ulong)(void*)_tlsHandlerAddress, TlsHandlerRegionSize);
+		Log.Info($"TLS handler at 0x{_tlsHandlerAddress:X16}");
 	}
 
 	private unsafe static nint CreateUnresolvedReturnStub()
@@ -2239,8 +2247,12 @@ public sealed unsafe partial class DirectExecutionBackend : INativeCpuBackend, I
 			ptr2[i] = 144;
 		}
 		uint num = default(uint);
-		VirtualProtect(ptr, 4096u, 32u, &num);
-		FlushInstructionCache(GetCurrentProcess(), ptr, 16u);
+		if (!_hostMemory.Protect((ulong)ptr, 4096u, HostPageProtection.ReadExecute, out num))
+		{
+			Log.Error($"VirtualProtect failed for unresolved return stub at 0x{(nint)ptr:X16}");
+			return 0;
+		}
+		_hostMemory.FlushInstructionCache((ulong)ptr, 16u);
 		return (nint)ptr;
 	}
 
@@ -2288,7 +2300,7 @@ public sealed unsafe partial class DirectExecutionBackend : INativeCpuBackend, I
 		uint oldProtect = default;
 		if (!VirtualProtect(ptr, stubSize, 32u, &oldProtect))
 		{
-			VirtualFree(ptr, 0u, 32768u);
+			Log.Error($"VirtualProtect failed for guest return stub at 0x{(nint)ptr:X16}");
 			return 0;
 		}
 		FlushInstructionCache(GetCurrentProcess(), ptr, (nuint)offset);
@@ -2490,51 +2502,7 @@ public sealed unsafe partial class DirectExecutionBackend : INativeCpuBackend, I
 			}
 			num = num6 > num ? num6 : num + 4096uL;
 		}
-		Console.Error.WriteLine($"[LOADER][INFO] Patched {num3} TLS loads, {num9} TLS stores, {num4} stack-canary accesses, {sse4aPatchCount} SSE4a EXTRQ blends");
-	}
-
-	private unsafe bool TryPatchSse4aExtrqBlend(nint address, byte* source)
-	{
-		// Rosetta does not implement AMD SSE4a EXTRQ. This exact sequence masks
-		// xmm2 to its low 40 bits, then copies the resulting second dword into
-		// xmm0. PEXTRB/PINSRD provides the same observable result in 12 bytes:
-		// extract source byte 4 and insert the zero-extended value into lane 1.
-		ReadOnlySpan<byte> pattern =
-		[
-			0x66, 0x0F, 0x78, 0xC2, 0x28, 0x00,
-			0xC4, 0xE3, 0x79, 0x02, 0xC2, 0x02,
-		];
-		for (var i = 0; i < pattern.Length; i++)
-		{
-			if (source[i] != pattern[i])
-			{
-				return false;
-			}
-		}
-
-		ReadOnlySpan<byte> replacement =
-		[
-			0x66, 0x0F, 0x3A, 0x14, 0xD0, 0x04,
-			0x66, 0x0F, 0x3A, 0x22, 0xC0, 0x01,
-		];
-		uint oldProtect = 0;
-		if (!VirtualProtect((void*)address, (nuint)replacement.Length, 64u, &oldProtect))
-		{
-			return false;
-		}
-		try
-		{
-			for (var i = 0; i < replacement.Length; i++)
-			{
-				((byte*)address)[i] = replacement[i];
-			}
-		}
-		finally
-		{
-			VirtualProtect((void*)address, (nuint)replacement.Length, oldProtect, &oldProtect);
-			FlushInstructionCache(GetCurrentProcess(), (void*)address, (nuint)replacement.Length);
-		}
-		return true;
+		Log.Info($"Patched {num3} TLS loads, {num9} TLS stores, {num4} stack-canary accesses");
 	}
 
 	private unsafe bool IsPatternMatch(byte* ptr, byte[] pattern)
@@ -2689,7 +2657,7 @@ public sealed unsafe partial class DirectExecutionBackend : INativeCpuBackend, I
 			long num3 = num - num2;
 			if (num3 < int.MinValue || num3 > int.MaxValue)
 			{
-				Console.Error.WriteLine($"[LOADER][WARNING] TLS patch out of rel32 range at 0x{address:X16}");
+				Log.Warning($"TLS patch out of rel32 range at 0x{address:X16}");
 				return false;
 			}
 
@@ -2746,7 +2714,7 @@ public sealed unsafe partial class DirectExecutionBackend : INativeCpuBackend, I
 		long num3 = _tlsHandlerAddress - (num + num2 + 4);
 		if (num3 < int.MinValue || num3 > int.MaxValue)
 		{
-			Console.Error.WriteLine($"[LOADER][WARNING] TLS store helper out of rel32 range at 0x{num:X16}");
+			Log.Warning($"TLS store helper out of rel32 range at 0x{num:X16}");
 			return 0;
 		}
 		*(int*)(ptr + num2) = (int)num3;
@@ -2764,8 +2732,12 @@ public sealed unsafe partial class DirectExecutionBackend : INativeCpuBackend, I
 			ptr[num2++] = 144;
 		}
 		uint flNewProtect = default(uint);
-		VirtualProtect((void*)num, 32u, 32u, &flNewProtect);
-		FlushInstructionCache(GetCurrentProcess(), (void*)num, 32u);
+		if (!_hostMemory.Protect((ulong)(void*)num, 32u, HostPageProtection.ReadExecute, out flNewProtect))
+		{
+			Log.Error($"VirtualProtect failed for TLS store helper at 0x{num:X16}");
+			return 0;
+		}
+		_hostMemory.FlushInstructionCache((ulong)(void*)num, 32u);
 		return num;
 	}
 
@@ -2778,7 +2750,7 @@ public sealed unsafe partial class DirectExecutionBackend : INativeCpuBackend, I
 		int num = (size + 15) & -16;
 		if (_tlsPatchStubOffset + num > TlsHandlerRegionSize)
 		{
-			Console.Error.WriteLine("[LOADER][WARNING] TLS patch stub region exhausted.");
+			Log.Warning("TLS patch stub region exhausted.");
 			return 0;
 		}
 		nint result = _tlsHandlerAddress + _tlsPatchStubOffset;
@@ -2807,7 +2779,7 @@ public sealed unsafe partial class DirectExecutionBackend : INativeCpuBackend, I
 			long num = target - (address + 5);
 			if (num < int.MinValue || num > int.MaxValue)
 			{
-				Console.Error.WriteLine($"[LOADER][WARNING] TLS patch out of rel32 range at 0x{address:X16}");
+				Log.Warning($"TLS patch out of rel32 range at 0x{address:X16}");
 				return false;
 			}
 			*(byte*)address = 232;
@@ -2829,7 +2801,7 @@ public sealed unsafe partial class DirectExecutionBackend : INativeCpuBackend, I
 	{
 		if (VirtualQuery((void*)baseAddress, out var lpBuffer, (nuint)sizeof(MEMORY_BASIC_INFORMATION64)) != 0 && lpBuffer.State != 65536)
 		{
-			Console.Error.WriteLine($"[LOADER][INFO] PRT aperture at 0x{baseAddress:X16} already in use (state=0x{lpBuffer.State:X}), will use lazy-commit");
+			Log.Info($"PRT aperture at 0x{baseAddress:X16} already in use (state=0x{lpBuffer.RawState:X}), will use lazy-commit");
 			return;
 		}
 		ulong num = baseAddress;
@@ -2853,11 +2825,11 @@ public sealed unsafe partial class DirectExecutionBackend : INativeCpuBackend, I
 		}
 		if (num4 == 0)
 		{
-			Console.Error.WriteLine($"[LOADER][INFO] Pre-reserved PRT aperture: 0x{baseAddress:X16}-0x{num2:X16} ({num3} chunks)");
+			Log.Info($"Pre-reserved PRT aperture: 0x{baseAddress:X16}-0x{num2:X16} ({num3} chunks)");
 		}
 		else
 		{
-			Console.Error.WriteLine($"[LOADER][INFO] Partial PRT aperture reserve: 0x{baseAddress:X16}-0x{num2:X16} ({num3} chunks OK, {num4} failed)");
+			Log.Info($"Partial PRT aperture reserve: 0x{baseAddress:X16}-0x{num2:X16} ({num3} chunks OK, {num4} failed)");
 		}
 		ulong num6 = baseAddress;
 		ulong num7 = baseAddress + 67108864;
@@ -2872,11 +2844,11 @@ public sealed unsafe partial class DirectExecutionBackend : INativeCpuBackend, I
 		}
 		if (num8 > 0)
 		{
-			Console.Error.WriteLine($"[LOADER][INFO] Pre-committed PRT bootstrap: 0x{baseAddress:X16}-0x{num7:X16} ({num8 * 2}MB in {num8} chunks)");
+			Log.Info($"Pre-committed PRT bootstrap: 0x{baseAddress:X16}-0x{num7:X16} ({num8 * 2}MB in {num8} chunks)");
 		}
 		else
 		{
-			Console.Error.WriteLine($"[LOADER][WARN] Failed to pre-commit any PRT bootstrap chunks at 0x{baseAddress:X16}");
+			Log.Warn($"Failed to pre-commit any PRT bootstrap chunks at 0x{baseAddress:X16}");
 		}
 	}
 
@@ -2899,7 +2871,7 @@ public sealed unsafe partial class DirectExecutionBackend : INativeCpuBackend, I
 
 		if (added)
 		{
-			Console.Error.WriteLine($"[LOADER][TRACE] registered PRT lazy range: base=0x{baseAddress:X16} size=0x{size:X16}");
+			Log.Trace($"registered PRT lazy range: base=0x{baseAddress:X16} size=0x{size:X16}");
 		}
 	}
 
@@ -2957,8 +2929,8 @@ public sealed unsafe partial class DirectExecutionBackend : INativeCpuBackend, I
 			_readyGuestThreads.Enqueue(thread);
 			Interlocked.Increment(ref _readyGuestThreadCount);
 		}
-		Console.Error.WriteLine(
-			$"[LOADER][INFO] Scheduled guest thread '{thread.Name}' handle=0x{thread.ThreadHandle:X16} " +
+		Log.Info(
+			$"Scheduled guest thread '{thread.Name}' handle=0x{thread.ThreadHandle:X16} " +
 			$"entry=0x{thread.EntryPoint:X16} arg=0x{thread.Argument:X16} priority={thread.Priority} " +
 			$"host_priority={MapGuestThreadPriority(thread.Priority)} affinity=0x{thread.AffinityMask:X}");
 		Pump(creatorContext, "pthread_create");
@@ -3157,7 +3129,7 @@ public sealed unsafe partial class DirectExecutionBackend : INativeCpuBackend, I
 		{
 			if (_logGuestThreads)
 			{
-				Console.Error.WriteLine($"[LOADER][INFO] guest_threads.wake key={wakeKey} count={wakeCount}");
+				Log.Info($"guest_threads.wake key={wakeKey} count={wakeCount}");
 			}
 
 			// Pump or the readied thread waits for an import dispatch that never comes.
@@ -3288,7 +3260,7 @@ public sealed unsafe partial class DirectExecutionBackend : INativeCpuBackend, I
 
 		if (wakeCount != 0 && _logGuestThreads)
 		{
-			Console.Error.WriteLine($"[LOADER][INFO] guest_threads.timeout_wake count={wakeCount}");
+			Log.Info($"guest_threads.timeout_wake count={wakeCount}");
 		}
 
 		return wakeCount;
@@ -3324,8 +3296,8 @@ public sealed unsafe partial class DirectExecutionBackend : INativeCpuBackend, I
 			{
 				foreach (var thread in SnapshotGuestThreads())
 				{
-					Console.Error.WriteLine(
-						$"[LOADER][TRACE] guest_thread.idle_wait reason={reason} handle=0x{thread.ThreadHandle:X16} " +
+					Log.Trace(
+						$"guest_thread.idle_wait reason={reason} handle=0x{thread.ThreadHandle:X16} " +
 						$"name='{thread.Name}' state={thread.State} imports={Interlocked.Read(ref thread.ImportCount)} " +
 						$"nid={Volatile.Read(ref thread.LastImportNid) ?? "none"} ret=0x{Volatile.Read(ref thread.LastReturnRip):X16} " +
 						$"block={thread.BlockReason ?? "none"}");
@@ -4329,7 +4301,7 @@ public sealed unsafe partial class DirectExecutionBackend : INativeCpuBackend, I
 	{
 		if (_logGuestContext)
 		{
-			Console.Error.WriteLine($"[LOADER][TRACE] guest_context.{message}");
+			Log.Trace($"guest_context.{message}");
 		}
 	}
 
@@ -4356,6 +4328,35 @@ public sealed unsafe partial class DirectExecutionBackend : INativeCpuBackend, I
 		continuationThread.Join();
 	}
 
+	private bool RequestGuestThreadTeardown(int timeoutMs)
+	{
+		_guestTeardownRequested = true;
+		Thread[] hostThreads;
+		using (LockGate("RequestGuestThreadTeardown"))
+		{
+			_readyGuestThreads.Clear();
+			Interlocked.Exchange(ref _readyGuestThreadCount, 0);
+			hostThreads = _guestThreads.Values
+				.Select(static thread => thread.HostThread)
+				.Where(static host => host is not null && host != Thread.CurrentThread && host.IsAlive)
+				.Cast<Thread>()
+				.ToArray();
+		}
+
+		var deadline = Environment.TickCount64 + timeoutMs;
+		var allStopped = true;
+		foreach (var host in hostThreads)
+		{
+			var remaining = (int)Math.Max(1L, deadline - Environment.TickCount64);
+			if (!host.Join(remaining) && host.IsAlive)
+			{
+				allStopped = false;
+				Log.Warn($"Guest worker host thread '{host.Name}' still running after teardown wait.");
+			}
+		}
+
+		return allStopped;
+	}
 	private void ClearGuestThreads()
 	{
 		GuestContinuationRunner[] continuationRunners;
@@ -4609,8 +4610,8 @@ public sealed unsafe partial class DirectExecutionBackend : INativeCpuBackend, I
 
 		if (SetThreadAffinityMask(GetCurrentThread(), (nuint)hostAffinityMask) == 0 && _logGuestThreads)
 		{
-			Console.Error.WriteLine(
-				$"[LOADER][WARN] Failed to set guest thread affinity guest=0x{guestAffinityMask:X} " +
+			Log.Warn(
+				$"Failed to set guest thread affinity guest=0x{guestAffinityMask:X} " +
 				$"host=0x{hostAffinityMask:X} error={Marshal.GetLastWin32Error()}");
 		}
 	}
@@ -4757,10 +4758,10 @@ public sealed unsafe partial class DirectExecutionBackend : INativeCpuBackend, I
 
 			if (_logGuestThreads)
 			{
-				Console.Error.WriteLine(
-					resumeContinuation
-						? $"[LOADER][INFO] Pumping guest thread '{thread.Name}' reason={reason} resume=0x{continuation.Rip:X16}"
-						: $"[LOADER][INFO] Pumping guest thread '{thread.Name}' reason={reason} entry=0x{thread.EntryPoint:X16}");
+			Log.Info(
+				resumeContinuation
+					? $"Pumping guest thread '{thread.Name}' reason={reason} resume=0x{continuation.Rip:X16}"
+					: $"Pumping guest thread '{thread.Name}' reason={reason} entry=0x{thread.EntryPoint:X16}");
 			}
 			var exitReason = resumeContinuation
 				? ExecuteBlockedGuestThreadContinuation(thread.Context, continuation, thread.Name, out var blockReason)
@@ -4801,8 +4802,8 @@ public sealed unsafe partial class DirectExecutionBackend : INativeCpuBackend, I
 			}
 			if (_logGuestThreads)
 			{
-				Console.Error.WriteLine(
-					$"[LOADER][INFO] Guest thread '{thread.Name}' state={thread.State} reason={blockReason ?? "none"}");
+				Log.Info(
+					$"Guest thread '{thread.Name}' state={thread.State} reason={blockReason ?? "none"}");
 			}
 		}
 		finally
@@ -5371,8 +5372,8 @@ public sealed unsafe partial class DirectExecutionBackend : INativeCpuBackend, I
 
 	private unsafe bool ExecuteEntry(CpuContext context, ulong entryPoint, out OrbisGen2Result result)
 	{
-		Console.Error.WriteLine($"[LOADER][INFO] ExecuteEntry starting at 0x{entryPoint:X16}");
-		Console.Error.WriteLine($"[LOADER][INFO] RSP=0x{context[CpuRegister.Rsp]:X16}, RDI=0x{context[CpuRegister.Rdi]:X16}");
+		Log.Info($"ExecuteEntry starting at 0x{entryPoint:X16}");
+		Log.Info($"RSP=0x{context[CpuRegister.Rsp]:X16}, RDI=0x{context[CpuRegister.Rdi]:X16}");
 		ulong num = context[CpuRegister.Rsp];
 		if (num == 0)
 		{
@@ -5380,7 +5381,7 @@ public sealed unsafe partial class DirectExecutionBackend : INativeCpuBackend, I
 			result = OrbisGen2Result.ORBIS_GEN2_ERROR_MEMORY_FAULT;
 			return false;
 		}
-		Console.Error.WriteLine($"[LOADER][INFO] StackTop: 0x{num:X16}");
+		Log.Info($"StackTop: 0x{num:X16}");
 		const uint stubSize = 512u;
 		void* ptr = VirtualAlloc(null, stubSize, 12288u, 4u);
 		if (ptr == null)
@@ -5542,18 +5543,18 @@ public sealed unsafe partial class DirectExecutionBackend : INativeCpuBackend, I
 			}
 			if (string.Equals(Environment.GetEnvironmentVariable("SHARPEMU_SENTINEL_PROBE"), "1", StringComparison.Ordinal))
 			{
-				Console.Error.WriteLine("[LOADER][INFO] Running unresolved sentinel probe...");
+				Log.Info("Running unresolved sentinel probe...");
 				CallNativeEntry((void*)65534);
-				Console.Error.WriteLine("[LOADER][INFO] Sentinel probe returned.");
+				Log.Info("Sentinel probe returned.");
 			}
-			Console.Error.WriteLine("[LOADER][INFO] Calling guest entry...");
+			Log.Info("Calling guest entry...");
 			StartStallWatchdog();
 			StartReadyThreadDispatcher();
 			int num6 = -1;
 			try
 			{
 				num6 = CallNativeEntry(ptr);
-				Console.Error.WriteLine($"[LOADER][INFO] Guest returned: {num6}");
+				Log.Info($"Guest returned: {num6}");
 				// A host stop has already invalidated the session. Draining guest
 				// continuations here can re-enter a blocked HLE call after its owner
 				// has exited, preventing the embedded GUI from receiving its exit
@@ -5565,16 +5566,16 @@ public sealed unsafe partial class DirectExecutionBackend : INativeCpuBackend, I
 			}
 			catch (AccessViolationException ex)
 			{
-				Console.Error.WriteLine("[LOADER][ERROR] Access Violation during execution: " + ex.Message);
-				Console.Error.WriteLine("[LOADER][ERROR] This usually means:");
-				Console.Error.WriteLine("  1. Invalid memory access in guest code");
-				Console.Error.WriteLine("  2. Unpatched import/TLS call");
-				Console.Error.WriteLine("  3. Stack corruption");
+				Log.Error("Access Violation during execution: " + ex.Message);
+				Log.Error("This usually means:");
+				Log.Error("  1. Invalid memory access in guest code");
+				Log.Error("  2. Unpatched import/TLS call");
+				Log.Error("  3. Stack corruption");
 				num6 = -1;
 			}
 			catch (Exception ex2)
 			{
-				Console.Error.WriteLine("[LOADER][ERROR] Exception during execution: " + ex2.GetType().Name + ": " + ex2.Message);
+				Log.Error("Exception during execution: " + ex2.GetType().Name + ": " + ex2.Message);
 				LastError = "Exception during execution: " + ex2.GetType().Name + ": " + ex2.Message;
 				num6 = -1;
 			}
@@ -5585,7 +5586,8 @@ public sealed unsafe partial class DirectExecutionBackend : INativeCpuBackend, I
 				{
 					LastError = "Detected repeating import loop and forced guest unwind to host.";
 				}
-				Console.Error.WriteLine("[LOADER][ERROR] " + LastError);
+				Log.Error(LastError ?? "null");
+				RequestGuestThreadTeardown(3000);
 				return false;
 			}
 			if (num6 == 0)
@@ -5599,7 +5601,8 @@ public sealed unsafe partial class DirectExecutionBackend : INativeCpuBackend, I
 			{
 				LastError = $"Guest entry point returned non-zero: {num6}";
 			}
-			Console.Error.WriteLine("[LOADER][ERROR] " + LastError);
+			Log.Error(LastError ?? "null");
+			RequestGuestThreadTeardown(3000);
 			return false;
 		}
 		finally
@@ -5689,9 +5692,46 @@ public sealed unsafe partial class DirectExecutionBackend : INativeCpuBackend, I
 					Stopwatch.GetTimestamp() - lastPeriodicSnapshot >= periodicSnapshotTicks)
 				{
 					lastPeriodicSnapshot = Stopwatch.GetTimestamp();
-					Console.Error.WriteLine("[LOADER][ERROR] --- periodic snapshot ---");
-					LogStallWatchdogSnapshot();
-					Console.Error.Flush();
+					var gateOwnerSite = _gateOwnerSite;
+					var gateOwnerTid = Volatile.Read(ref _gateOwnerManagedThreadId);
+					var gateHeldMs = gateOwnerSite is null
+						? 0.0
+						: Stopwatch.GetElapsedTime(Volatile.Read(ref _gateAcquireTimestamp)).TotalMilliseconds;
+					var snapshotText = new System.Text.StringBuilder();
+					snapshotText.AppendLine(
+						$"[LOADER][DIAG] Periodic snapshot: gate_owner={gateOwnerSite ?? "none"} " +
+						$"gate_tid={gateOwnerTid} gate_held_ms={gateHeldMs:0}");
+					try
+					{
+						foreach (var thread in _guestThreads.Values)
+						{
+							snapshotText.AppendLine(
+								$"[LOADER][DIAG] gateless guest-thread: handle=0x{thread.ThreadHandle:X16} name='{thread.Name}' " +
+								$"state={thread.State} imports={Interlocked.Read(ref thread.ImportCount)} " +
+								$"nid={Volatile.Read(ref thread.LastImportNid) ?? "none"} ret=0x{Volatile.Read(ref thread.LastReturnRip):X16} " +
+								$"block={thread.BlockReason ?? "none"} wake={thread.BlockWakeKey ?? "none"}");
+						}
+					}
+					catch (Exception snapshotError)
+					{
+						snapshotText.AppendLine($"[LOADER][DIAG] gateless snapshot failed: {snapshotError.Message}");
+					}
+
+					var snapshotPath = Environment.GetEnvironmentVariable("SHARPEMU_PERIODIC_SNAPSHOT_FILE");
+					if (!string.IsNullOrWhiteSpace(snapshotPath))
+					{
+						try
+						{
+							System.IO.File.AppendAllText(snapshotPath, snapshotText.ToString());
+						}
+						catch
+						{
+						}
+					}
+					else
+					{
+						Log.Error(snapshotText.ToString());
+					}
 				}
 				long num2 = Stopwatch.GetTimestamp() - Volatile.Read(ref _lastProgressTimestamp);
 				if (num2 < num)
@@ -5700,19 +5740,21 @@ public sealed unsafe partial class DirectExecutionBackend : INativeCpuBackend, I
 				}
 				if (HasReadyGuestThread())
 				{
-					Console.Error.WriteLine(
-						$"[LOADER][WARN] No import progress for {stallWatchdogSeconds}s, but a guest thread is ready; dispatcher will resume it.");
+					if (_cpuContext is { } watchdogContext)
+					{
+						Pump(watchdogContext, "watchdog");
+					}
+					Log.Warn(
+						$"No import progress for {stallWatchdogSeconds}s, but a guest thread is ready; continuing.");
 					LogStallWatchdogSnapshot();
-					Console.Error.Flush();
 					MarkExecutionProgress();
 					continue;
 				}
 				if (IsExpectedBlockingImportStall(out var blockingNid, out var blockingName))
 				{
-					Console.Error.WriteLine(
-						$"[LOADER][WARN] No import progress for {stallWatchdogSeconds}s while waiting in {blockingName} ({blockingNid}); continuing.");
+					Log.Warn(
+						$"No import progress for {stallWatchdogSeconds}s while waiting in {blockingName} ({blockingNid}); continuing.");
 					LogStallWatchdogSnapshot();
-					Console.Error.Flush();
 					MarkExecutionProgress();
 					continue;
 				}
@@ -5721,9 +5763,8 @@ public sealed unsafe partial class DirectExecutionBackend : INativeCpuBackend, I
 					continue;
 				}
 				LastError = $"Execution stalled with no import progress for {stallWatchdogSeconds}s (imports={Volatile.Read(ref _importDispatchCount)}).";
-				Console.Error.WriteLine("[LOADER][ERROR] " + LastError);
+				Log.Error(LastError ?? "null");
 				LogStallWatchdogSnapshot();
-				Console.Error.Flush();
 				Environment.Exit(4);
 			}
 		}))
@@ -5986,7 +6027,7 @@ public sealed unsafe partial class DirectExecutionBackend : INativeCpuBackend, I
 				return;
 			}
 			ulong rsp = cpuContext[CpuRegister.Rsp];
-			Console.Error.WriteLine($"[LOADER][ERROR] Stall snapshot: rip=0x{cpuContext.Rip:X16} rsp=0x{rsp:X16} rbp=0x{cpuContext[CpuRegister.Rbp]:X16} rax=0x{cpuContext[CpuRegister.Rax]:X16} rbx=0x{cpuContext[CpuRegister.Rbx]:X16} rcx=0x{cpuContext[CpuRegister.Rcx]:X16} rdx=0x{cpuContext[CpuRegister.Rdx]:X16} rsi=0x{cpuContext[CpuRegister.Rsi]:X16} rdi=0x{cpuContext[CpuRegister.Rdi]:X16}");
+			Log.Error($"Stall snapshot: rip=0x{cpuContext.Rip:X16} rsp=0x{rsp:X16} rbp=0x{cpuContext[CpuRegister.Rbp]:X16} rax=0x{cpuContext[CpuRegister.Rax]:X16} rbx=0x{cpuContext[CpuRegister.Rbx]:X16} rcx=0x{cpuContext[CpuRegister.Rcx]:X16} rdx=0x{cpuContext[CpuRegister.Rdx]:X16} rsi=0x{cpuContext[CpuRegister.Rsi]:X16} rdi=0x{cpuContext[CpuRegister.Rdi]:X16}");
 			ulong num = cpuContext.Rip & 0xFFFFFFFFFFFFFFF0uL;
 			for (int i = 0; i < _importEntries.Length; i++)
 			{
@@ -5997,26 +6038,26 @@ public sealed unsafe partial class DirectExecutionBackend : INativeCpuBackend, I
 				string text = _importEntries[i].Nid;
 				if (_moduleManager.TryGetExport(text, out ExportedFunction export))
 				{
-					Console.Error.WriteLine($"[LOADER][ERROR] Stall import-stub: rip=0x{num:X16} nid={text} -> {export.LibraryName}:{export.Name}");
+					Log.Error($"Stall import-stub: rip=0x{num:X16} nid={text} -> {export.LibraryName}:{export.Name}");
 				}
 				else
 				{
-					Console.Error.WriteLine($"[LOADER][ERROR] Stall import-stub: rip=0x{num:X16} nid={text}");
+					Log.Error($"Stall import-stub: rip=0x{num:X16} nid={text}");
 				}
 				break;
 			}
 			Span<byte> destination = stackalloc byte[16];
 			if (cpuContext.Memory.TryRead(cpuContext.Rip, destination))
 			{
-				Console.Error.WriteLine($"[LOADER][ERROR] Stall bytes @rip: {BitConverter.ToString(destination.ToArray()).Replace("-", " ")}");
+				Log.Error($"Stall bytes @rip: {BitConverter.ToString(destination.ToArray()).Replace("-", " ")}");
 			}
 			else if (cpuContext.Memory.TryRead(num, destination))
 			{
-				Console.Error.WriteLine($"[LOADER][ERROR] Stall bytes @rip_align: {BitConverter.ToString(destination.ToArray()).Replace("-", " ")}");
+				Log.Error($"Stall bytes @rip_align: {BitConverter.ToString(destination.ToArray()).Replace("-", " ")}");
 			}
 			if (rsp != 0 && cpuContext.TryReadUInt64(rsp, out var value) && cpuContext.TryReadUInt64(rsp + 8, out var value2))
 			{
-				Console.Error.WriteLine($"[LOADER][ERROR] Stall stack: [rsp]=0x{value:X16} [rsp+8]=0x{value2:X16}");
+				Log.Error($"Stall stack: [rsp]=0x{value:X16} [rsp+8]=0x{value2:X16}");
 			}
 
 			var threads = SnapshotGuestThreads();
@@ -6039,8 +6080,8 @@ public sealed unsafe partial class DirectExecutionBackend : INativeCpuBackend, I
 						hostContextText = $" host_tid={hostThreadId} host_ctx=unavailable";
 					}
 
-					Console.Error.WriteLine(
-						$"[LOADER][ERROR] Stall guest-thread: handle=0x{thread.ThreadHandle:X16} name='{thread.Name}' " +
+					Log.Error(
+						$"Stall guest-thread: handle=0x{thread.ThreadHandle:X16} name='{thread.Name}' " +
 						$"state={thread.State} imports={Interlocked.Read(ref thread.ImportCount)} " +
 						$"nid={Volatile.Read(ref thread.LastImportNid) ?? "none"} ret=0x{Volatile.Read(ref thread.LastReturnRip):X16} " +
 						$"rdi=0x{Volatile.Read(ref thread.LastImportRdi):X16} rsi=0x{Volatile.Read(ref thread.LastImportRsi):X16} " +
@@ -6048,7 +6089,7 @@ public sealed unsafe partial class DirectExecutionBackend : INativeCpuBackend, I
 					logged++;
 					if (logged >= 48 && threads.Length > logged)
 					{
-						Console.Error.WriteLine($"[LOADER][ERROR] Stall guest-thread: ... {threads.Length - logged} more");
+						Log.Error($"Stall guest-thread: ... {threads.Length - logged} more");
 						break;
 					}
 				}
@@ -6250,8 +6291,8 @@ public sealed unsafe partial class DirectExecutionBackend : INativeCpuBackend, I
 
 			if (now >= deadline)
 			{
-				Console.Error.WriteLine(
-					$"[LOADER][WARN] {busyCount} guest worker(s) (first: '{busyName}') did not leave guest code " +
+				Log.Warn(
+					$"{busyCount} guest worker(s) (first: '{busyName}') did not leave guest code " +
 					"during shutdown; the native session state stays alive to avoid faulting them.");
 				return false;
 			}
@@ -6271,6 +6312,9 @@ public sealed unsafe partial class DirectExecutionBackend : INativeCpuBackend, I
 		StopStallWatchdog();
 		if (!WaitForGuestThreadQuiescence(TimeSpan.FromSeconds(5)))
 		{
+			Log.Warn(
+				"Guest worker threads did not leave guest code during shutdown; " +
+				"the native session state stays alive to avoid faulting them.");
 			GuestSessionLeaked = true;
 			return;
 		}

@@ -4,11 +4,13 @@
 using SharpEmu.HLE;
 using System;
 using System.Diagnostics.CodeAnalysis;
+using SharpEmu.Logging;
 
 namespace SharpEmu.Libs.Kernel;
 
 internal static class KernelVirtualRangeAllocator
 {
+    private static readonly SharpEmuLogger Log = SharpEmuLog.For("Libs.Kernel");
     public static bool TryReserve(
         CpuContext ctx,
         ulong desiredAddress,
@@ -30,7 +32,7 @@ internal static class KernelVirtualRangeAllocator
         {
             if (!TryResolveAddressSpace(ctx.Memory, out var addressSpace))
             {
-                Console.Error.WriteLine($"[LOADER][TRACE] {traceName}: AllocateAt missing on {ctx.Memory.GetType().FullName}");
+                Log.Trace($"{traceName}: AllocateAt missing on {ctx.Memory.GetType().FullName}");
                 return false;
             }
 
@@ -45,7 +47,7 @@ internal static class KernelVirtualRangeAllocator
             var allocated = addressSpace.AllocateAt(desiredAddress, length, executable, allowAllocateAtAlternative);
             if (allocated == 0)
             {
-                Console.Error.WriteLine($"[LOADER][TRACE] {traceName}: AllocateAt returned {typeof(ulong).FullName} value=0");
+                Log.Trace($"{traceName}: AllocateAt returned {typeof(ulong).FullName} value=0");
                 return false;
             }
 
@@ -56,8 +58,7 @@ internal static class KernelVirtualRangeAllocator
         {
             // Expected when a fixed-address request cannot be satisfied on
             // this host; the caller falls back or reports the failure.
-            Console.Error.WriteLine(
-                $"[LOADER][TRACE] {traceName}: no host mapping at 0x{desiredAddress:X16} len=0x{length:X}");
+            Log.Trace($"{traceName}: no host mapping at 0x{desiredAddress:X16} len=0x{length:X}");
             return false;
         }
     }

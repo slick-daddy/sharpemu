@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 using SharpEmu.HLE;
+using SharpEmu.Logging;
 
 namespace SharpEmu.Libs.Np;
 
@@ -9,6 +10,7 @@ namespace SharpEmu.Libs.Np;
 // Common::initialize returns a negative SCE error, so no-op success is required to boot.
 public static class NpCppWebApiExports
 {
+    private static readonly SharpEmuLogger Log = SharpEmuLog.For("Libs.Np");
     [SysAbiExport(
         Nid = "UYPxv8MIzGo",
         ExportName = "_ZN3sce2Np9CppWebApi6Common10initializeERKNS2_10InitParamsERNS2_10LibContextE",
@@ -23,12 +25,6 @@ public static class NpCppWebApiExports
 
     private static void TraceCppWebApi(string operation, ulong arg0, ulong arg1)
     {
-        if (!string.Equals(Environment.GetEnvironmentVariable("SHARPEMU_LOG_NP"), "1", StringComparison.Ordinal))
-        {
-            return;
-        }
-
-        Console.Error.WriteLine(
-            $"[LOADER][TRACE] np_cppwebapi.{operation} arg0=0x{arg0:X16} arg1=0x{arg1:X16}");
+        Log.Trace($"np_cppwebapi.{operation} arg0=0x{arg0:X16} arg1=0x{arg1:X16}");
     }
 }

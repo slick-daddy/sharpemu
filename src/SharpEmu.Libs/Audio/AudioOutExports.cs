@@ -6,11 +6,13 @@ using SharpEmu.HLE.Host;
 using System.Buffers;
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using SharpEmu.Logging;
 
 namespace SharpEmu.Libs.Audio;
 
 public static class AudioOutExports
 {
+    private static readonly SharpEmuLogger Log = SharpEmuLog.For("Libs.Audio");
     private static readonly ConcurrentDictionary<int, PortState> Ports = new();
     private static int _nextPortHandle;
 
@@ -116,8 +118,7 @@ public static class AudioOutExports
         catch (Exception exception)
         {
             backendName = "silent";
-            Console.Error.WriteLine(
-                $"[LOADER][WARN] AudioOut host backend unavailable: {exception.Message}");
+            Log.Warn($"AudioOut host backend unavailable: {exception.Message}");
         }
 
         var handle = Interlocked.Increment(ref _nextPortHandle);
@@ -131,8 +132,8 @@ public static class AudioOutExports
             bytesPerSample,
             isFloat,
             backend);
-        Console.Error.WriteLine(
-            $"[LOADER][INFO] AudioOut port {handle}: {frequency} Hz, " +
+        Log.Info(
+            $"AudioOut port {handle}: {frequency} Hz, " +
             $"{channels} ch, {(isFloat ? "float32" : "s16")}, " +
             $"{bufferLength} frames, backend={backendName}");
         return ctx.SetReturn(handle);

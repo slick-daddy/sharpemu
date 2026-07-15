@@ -4,12 +4,17 @@
 using SharpEmu.HLE;
 using SharpEmu.Libs.Kernel;
 using System.Buffers.Binary;
+<<<<<<< HEAD
 using System.Threading;
+=======
+using SharpEmu.Logging;
+>>>>>>> ab12482 (fix: resolve duplicate event handlers, remove dead code, and migrate logging to structured logger)
 
 namespace SharpEmu.Libs.Ngs2;
 
 public static class Ngs2Exports
 {
+    private static readonly SharpEmuLogger Log = SharpEmuLog.For("Libs.Ngs2");
     private const int OrbisNgs2ErrorInvalidOutAddress = unchecked((int)0x804A0053);
     private const int OrbisNgs2ErrorInvalidSystemHandle = unchecked((int)0x804A0230);
     private const int OrbisNgs2ErrorInvalidRackHandle = unchecked((int)0x804A0261);
@@ -254,8 +259,7 @@ public static class Ngs2Exports
         var count = Interlocked.Increment(ref _renderCount);
         if (ShouldTrace() && (count <= 4 || count % 10_000 == 0))
         {
-            Console.Error.WriteLine(
-                $"[LOADER][TRACE] ngs2.render#{count} system=0x{systemHandle:X16} buffers={bufferInfoCount}");
+            Log.Trace($"ngs2.render#{count} system=0x{systemHandle:X16} buffers={bufferInfoCount}");
         }
 
         return SetReturn(ctx, 0);
@@ -439,6 +443,7 @@ public static class Ngs2Exports
             Environment.GetEnvironmentVariable("SHARPEMU_LOG_NGS2"),
             "1",
             StringComparison.Ordinal);
+<<<<<<< HEAD
 
     private static int SetReturn(CpuContext ctx, int result)
     {
@@ -473,3 +478,6 @@ public static class Ngs2Exports
         LibraryName = "libSceNgs2")]
     public static int Ngs2GeomResetListenerParam(CpuContext ctx) => ctx.SetReturn(0);
 }
+=======
+}
+>>>>>>> ab12482 (fix: resolve duplicate event handlers, remove dead code, and migrate logging to structured logger)

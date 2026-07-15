@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 using Microsoft.Win32.SafeHandles;
+using SharpEmu.Logging;
 
 namespace SharpEmu.HLE.Host.Windows;
 
@@ -33,6 +34,8 @@ public static class WindowsDualSenseReader
     private static byte _lightbarGreen;
     private static byte _lightbarBlue = 64; // PS-style blue default
     private static byte _playerLeds = 0x04; // center LED = player 1
+
+    private static readonly SharpEmuLogger Log = SharpEmuLog.For("HLE.DualSense");
 
     /// <summary>Starts the background reader once; safe to call repeatedly.</summary>
     public static void EnsureStarted()
@@ -268,7 +271,7 @@ public static class WindowsDualSenseReader
 
                 if (!announcedConnect)
                 {
-                    Console.Error.WriteLine("[LOADER][INFO] DualSense controller connected.");
+                    Log.Info("DualSense controller connected.");
                     announcedConnect = true;
                 }
 
@@ -309,7 +312,7 @@ public static class WindowsDualSenseReader
 
             if (announcedConnect)
             {
-                Console.Error.WriteLine("[LOADER][INFO] DualSense controller disconnected.");
+                Log.Info("DualSense controller disconnected.");
                 announcedConnect = false;
             }
 

@@ -4,12 +4,17 @@
 using SharpEmu.HLE;
 using System.Buffers.Binary;
 using System.Text;
+<<<<<<< HEAD
 using System.Threading;
+=======
+using SharpEmu.Logging;
+>>>>>>> ab12482 (fix: resolve duplicate event handlers, remove dead code, and migrate logging to structured logger)
 
 namespace SharpEmu.Libs.UserService;
 
 public static class UserServiceExports
 {
+    private static readonly SharpEmuLogger Log = SharpEmuLog.For("Libs.UserService");
     private const int OrbisUserServiceErrorInvalidArgument = unchecked((int)0x80960005);
     private const int OrbisUserServiceErrorNoEvent = unchecked((int)0x80960007);
     private const int OrbisUserServiceErrorInvalidParameter = unchecked((int)0x80960009);
@@ -21,8 +26,12 @@ public static class UserServiceExports
     private const int InvalidUserId = -1;
     private const string PrimaryUserName = "SharpEmu";
     private static int _loginEventDelivered;
+<<<<<<< HEAD
 
     [SysAbiExport(
+=======
+[SysAbiExport(
+>>>>>>> ab12482 (fix: resolve duplicate event handlers, remove dead code, and migrate logging to structured logger)
         Nid = "j3YMu1MVNNo",
         ExportName = "sceUserServiceInitialize",
         Target = Generation.Gen4 | Generation.Gen5,
@@ -262,6 +271,7 @@ public static class UserServiceExports
 
     private static bool TryWriteInt32(CpuContext ctx, ulong address, int value)
     {
+<<<<<<< HEAD
         Span<byte> bytes = stackalloc byte[sizeof(int)];
         BinaryPrimitives.WriteInt32LittleEndian(bytes, value);
         return ctx.Memory.TryWrite(address, bytes);
@@ -316,6 +326,10 @@ public static class UserServiceExports
                 : 0;
             Console.Error.WriteLine(
                 $"[LOADER][TRACE] user_service.{message} ret=0x{returnRip:X16}");
+=======
+        {
+            Log.Trace($"user_service.{message}");
+>>>>>>> ab12482 (fix: resolve duplicate event handlers, remove dead code, and migrate logging to structured logger)
         }
     }
 }

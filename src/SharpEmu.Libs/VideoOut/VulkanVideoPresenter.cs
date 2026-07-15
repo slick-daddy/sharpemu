@@ -13,6 +13,7 @@ using SharpEmu.ShaderCompiler;
 using SharpEmu.ShaderCompiler.Vulkan;
 using Silk.NET.Vulkan;
 using Silk.NET.Vulkan.Extensions.KHR;
+using SharpEmu.Logging;
 using Silk.NET.Vulkan.Extensions.EXT;
 using Silk.NET.Windowing;
 using System.Diagnostics;
@@ -100,6 +101,7 @@ internal readonly record struct VulkanGuestQueueIdentity(
 
 internal static unsafe class VulkanVideoPresenter
 {
+    private static readonly SharpEmuLogger Log = SharpEmuLog.For("Libs.VideoOut");
     // Standalone CLI launches use a desktop-sized surface. The embedded GUI
     // always takes its dimensions from the native child control instead.
     private const uint DefaultWindowWidth = 1920;
@@ -625,7 +627,8 @@ internal static unsafe class VulkanVideoPresenter
                 TranslatedDraw: null,
                 RequiredGuestWorkSequence: 0,
                 IsSplash: false);
-            Console.Error.WriteLine("[LOADER][INFO] Vulkan VideoOut hid splash");
+            System.Threading.Monitor.PulseAll(_gate);
+            Log.Info("Vulkan VideoOut hid splash");
         }
     }
 
@@ -634,6 +637,11 @@ internal static unsafe class VulkanVideoPresenter
         if (bgraFrame.Length != checked((int)(width * height * 4)))
         {
             return;
+        }
+
+        if (ShouldTraceGuestImageSubmissionsForDiagnostics())
+        {
+            Log.Trace($"vk.submit_call kind=Submit {width}x{height}");
         }
 
         lock (_gate)
@@ -669,6 +677,11 @@ internal static unsafe class VulkanVideoPresenter
         if (drawKind == GuestDrawKind.None || width == 0 || height == 0)
         {
             return;
+        }
+
+        if (ShouldTraceGuestImageSubmissionsForDiagnostics())
+        {
+            Log.Trace($"vk.submit_call kind=SubmitGuestDraw({drawKind}) {width}x{height}");
         }
 
         lock (_gate)
@@ -721,6 +734,11 @@ internal static unsafe class VulkanVideoPresenter
         if (pixelSpirv.Length == 0 || width == 0 || height == 0)
         {
             return;
+        }
+
+        if (ShouldTraceGuestImageSubmissionsForDiagnostics())
+        {
+            Log.Trace($"vk.submit_call kind=SubmitTranslatedDraw {width}x{height} textures={textures.Count}");
         }
 
         lock (_gate)
@@ -858,17 +876,17 @@ internal static unsafe class VulkanVideoPresenter
         var firstTarget = targets[0];
         if (RenderTargetsMismatchedOrAliased(targets, firstTarget))
         {
-            Console.Error.WriteLine(
-                "[LOADER][WARN] Vulkan skipped MRT draw with mismatched dimensions or aliased targets.");
+            Log.Warn("Vulkan skipped MRT draw with mismatched dimensions or aliased targets.");
             return;
         }
 
         if (ShouldTraceGuestImageSubmissionsForDiagnostics())
         {
-            Console.Error.WriteLine(
-                $"[LOADER][TRACE] vk.submit_call kind=SubmitOffscreenTranslatedDraw " +
+            Log.Trace(
+  $"vk.submit_call kind=SubmitOffscreenTranslatedDraw " +
                 $"targets={targets.Count} first=0x{firstTarget.Address:X16} " +
-                $"{firstTarget.Width}x{firstTarget.Height} textures={textures.Count}");
+                $"{firstTarget.Width}x{firstTarget.Height} textures={textures.Count}"
+);
         }
 
         var effectiveRenderState = renderState ?? GuestRenderState.Default;
@@ -1303,6 +1321,20 @@ internal static unsafe class VulkanVideoPresenter
             if (_closed ||
                 !_availableGuestImages.ContainsKey(address))
             {
+                Log.Trace(
+                    $"vk.submit_call kind=TrySubmitGuestImage addr=0x{address:X16} " +
+                    $"{width}x{height} known={known}");
+
+                // The caller (VideoOutExports.SubmitFlip) reports the flip as successful either
+                // way, so an unregistered address means the frame is dropped silently; warn once
+                // per address so that shows up in the log.
+                if (_tracedGuestImageSubmissions.Add((address, width, height)))
+                {
+                    Log.Warn(
+                        $"vk.submit_guest_image_unknown addr=0x{address:X16} " +
+                        $"{width}x{height} - flip target has no completed GPU render output");
+                }
+
                 return false;
             }
 
@@ -1339,9 +1371,10 @@ internal static unsafe class VulkanVideoPresenter
         if (traceSubmission)
         {
             var effectivePitch = pitchInPixel == 0 ? width : pitchInPixel;
-            Console.Error.WriteLine(
-                $"[LOADER][TRACE] vk.submit_guest_image addr=0x{address:X16} " +
-                $"size={width}x{height} pitch={effectivePitch}");
+            Log.Trace(
+  $"vk.submit_guest_image addr=0x{address:X16} " +
+                $"size={width}x{height} pitch={effectivePitch}"
+);
         }
 
         return true;
@@ -1790,9 +1823,10 @@ internal static unsafe class VulkanVideoPresenter
                 !System.Runtime.InteropServices.NativeLibrary.TryGetExport(
                     vulkan, "vkGetInstanceProcAddr", out var procAddr))
             {
-                Console.Error.WriteLine(
-                    "[LOADER][WARN] No Vulkan loader for GLFW; place a universal libMoltenVK.dylib " +
-                    "next to SharpEmu as libvulkan.1.dylib.");
+                Log.Warn(
+  "No Vulkan loader for GLFW; place a universal libMoltenVK.dylib " +
+                    "next to SharpEmu as libvulkan.1.dylib."
+);
                 return;
             }
 
@@ -1801,11 +1835,11 @@ internal static unsafe class VulkanVideoPresenter
             var initVulkanLoader = (delegate* unmanaged<nint, void>)
                 System.Runtime.InteropServices.NativeLibrary.GetExport(glfw, "glfwInitVulkanLoader");
             initVulkanLoader(procAddr);
-            Console.Error.WriteLine("[LOADER][INFO] GLFW Vulkan loader wired to MoltenVK.");
+            Log.Info("GLFW Vulkan loader wired to MoltenVK.");
         }
         catch (Exception exception)
         {
-            Console.Error.WriteLine($"[LOADER][WARN] GLFW Vulkan loader setup failed: {exception.Message}");
+            Log.Warn($"GLFW Vulkan loader setup failed: {exception.Message}");
         }
     }
 
@@ -1827,9 +1861,10 @@ internal static unsafe class VulkanVideoPresenter
 
         if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable("DISPLAY")))
         {
-            Console.Error.WriteLine(
-                "[LOADER][WARN] Wayland session without an X server (DISPLAY unset); " +
-                "cannot steer GLFW to XWayland. Set SHARPEMU_ENABLE_WAYLAND=1 to use native Wayland.");
+            Log.Warn(
+                "Wayland session without an X server (DISPLAY unset); " +
+                "cannot steer GLFW to XWayland. If the window does not appear, install " +
+                "XWayland, or run natively with SHARPEMU_ENABLE_WAYLAND=1.");
             return;
         }
 
@@ -1843,13 +1878,13 @@ internal static unsafe class VulkanVideoPresenter
             var initHint = (delegate* unmanaged<int, int, void>)
                 System.Runtime.InteropServices.NativeLibrary.GetExport(glfw, "glfwInitHint");
             initHint(GlfwPlatformHint, GlfwPlatformX11);
-            Console.Error.WriteLine(
-                "[LOADER][INFO] Wayland session detected; requested GLFW X11/XWayland backend.");
+            Log.Info(
+                "Wayland session detected; requested GLFW X11/XWayland " +
+                "backend (set SHARPEMU_ENABLE_WAYLAND=1 to force native Wayland).");
         }
         catch (Exception exception)
         {
-            Console.Error.WriteLine(
-                $"[LOADER][WARN] Could not set GLFW X11 platform hint: {exception.Message}");
+            Log.Warn($"Could not set GLFW X11 platform hint: {exception.Message}");
         }
     }
 
@@ -1874,11 +1909,11 @@ internal static unsafe class VulkanVideoPresenter
                 GlfwPlatformNull => "Null",
                 _ => $"0x{platform:X}",
             };
-            Console.Error.WriteLine($"[LOADER][INFO] GLFW windowing platform in use: {label}");
+            Log.Info($"GLFW windowing platform in use: {label}");
         }
         catch (Exception exception)
         {
-            Console.Error.WriteLine($"[LOADER][WARN] Could not query GLFW platform: {exception.Message}");
+            Log.Warn($"Could not query GLFW platform: {exception.Message}");
         }
     }
 
@@ -1915,7 +1950,7 @@ internal static unsafe class VulkanVideoPresenter
         }
         catch (Exception exception)
         {
-            Console.Error.WriteLine($"[LOADER][ERROR] Vulkan VideoOut presenter failed: {exception}");
+            Log.Error($"Vulkan VideoOut presenter failed: {exception}");
         }
         finally
         {
@@ -2893,8 +2928,7 @@ internal static unsafe class VulkanVideoPresenter
             catch (InvalidOperationException exception)
                 when (exception.Message.Contains("render loop", StringComparison.OrdinalIgnoreCase))
             {
-                Console.Error.WriteLine(
-                    $"[LOADER][WARN] Vulkan VideoOut window dispose skipped during render loop: {exception.Message}");
+                Log.Warn($"Vulkan VideoOut window dispose skipped during render loop: {exception.Message}");
             }
         }
 
@@ -2908,11 +2942,11 @@ internal static unsafe class VulkanVideoPresenter
                     try
                     {
                         Pad.HostWindowInput.Attach(_window.CreateInput());
-                        Console.Error.WriteLine("[LOADER][INFO] Window keyboard input attached for pad emulation.");
+                        Log.Info("Window keyboard input attached for pad emulation.");
                     }
                     catch (Exception exception)
                     {
-                        Console.Error.WriteLine($"[LOADER][WARN] Window keyboard input unavailable: {exception.Message}");
+                        Log.Warn($"Window keyboard input unavailable: {exception.Message}");
                     }
                 }
 
@@ -2934,8 +2968,7 @@ internal static unsafe class VulkanVideoPresenter
             CreateCommandResources();
             CreateGuestDrawResources();
             _vulkanReady = true;
-            Console.Error.WriteLine(
-                $"[LOADER][INFO] Vulkan VideoOut ready: {_extent.Width}x{_extent.Height}, format={_swapchainFormat}");
+            Log.Info($"Vulkan VideoOut ready: {_extent.Width}x{_extent.Height}, format={_swapchainFormat}");
         }
 
         private static void WaitForRenderDocAttachIfRequested()
@@ -2948,8 +2981,7 @@ internal static unsafe class VulkanVideoPresenter
 
             if (string.Equals(value, "enter", StringComparison.OrdinalIgnoreCase))
             {
-                Console.Error.WriteLine(
-                    $"[LOADER][INFO] Waiting for RenderDoc attach before Vulkan init. pid={Environment.ProcessId}. Press Enter to continue.");
+                Log.Info($"Waiting for RenderDoc attach before Vulkan init. pid={Environment.ProcessId}. Press Enter to continue.");
                 _ = Console.ReadLine();
                 return;
             }
@@ -2960,8 +2992,7 @@ internal static unsafe class VulkanVideoPresenter
                 seconds = Math.Clamp(parsedSeconds, 1, 300);
             }
 
-            Console.Error.WriteLine(
-                $"[LOADER][INFO] Waiting {seconds}s for RenderDoc attach before Vulkan init. pid={Environment.ProcessId}");
+            Log.Info($"Waiting {seconds}s for RenderDoc attach before Vulkan init. pid={Environment.ProcessId}");
             Thread.Sleep(TimeSpan.FromSeconds(seconds));
         }
 
@@ -3033,7 +3064,7 @@ internal static unsafe class VulkanVideoPresenter
 
             if (_setDebugUtilsObjectName is not null)
             {
-                Console.Error.WriteLine("[LOADER][INFO] Vulkan debug labels enabled.");
+                Log.Info("Vulkan debug labels enabled.");
             }
         }
 
@@ -3240,7 +3271,7 @@ internal static unsafe class VulkanVideoPresenter
                 }
                 else if (_vulkanValidationEnabled)
                 {
-                    Console.Error.WriteLine("[LOADER][WARN] SHARPEMU_VK_VALIDATION=1 but VK_LAYER_KHRONOS_validation not found (Vulkan SDK installed?).");
+                    Log.Warn("SHARPEMU_VK_VALIDATION=1 but VK_LAYER_KHRONOS_validation not found (Vulkan SDK installed?).");
                 }
 
                 var layers = stackalloc byte*[1];
@@ -3272,7 +3303,7 @@ internal static unsafe class VulkanVideoPresenter
                     {
                         _debugUtils = debugUtils;
                         RegisterDebugMessenger(debugUtils);
-                        Console.Error.WriteLine("[LOADER][INFO] Vulkan Validation Layers active (SHARPEMU_VK_VALIDATION=1).");
+                        Log.Info("Vulkan Validation Layers active (SHARPEMU_VK_VALIDATION=1).");
                     }
                 }
                 finally
@@ -3396,7 +3427,7 @@ internal static unsafe class VulkanVideoPresenter
                 DebugUtilsMessageSeverityFlagsEXT.WarningBitExt => "[VULKAN][WARN]",
                 _ => "[VULKAN][INFO]",
             };
-            Console.Error.WriteLine($"{prefix} {message}");
+            Log.Info($"{prefix} {message}");
             return Vk.False;
         }
         private void CreateSurface()
@@ -3534,8 +3565,7 @@ internal static unsafe class VulkanVideoPresenter
                     _vk.GetPhysicalDeviceProperties(device, out var properties);
                     var name = SilkMarshal.PtrToString((nint)properties.DeviceName) ?? string.Empty;
                     var score = ScorePhysicalDevice(properties, name, deviceOverride);
-                    Console.Error.WriteLine(
-                        $"[LOADER][INFO] Vulkan candidate: {name} ({properties.DeviceType}) score={score}");
+                    Log.Info($"Vulkan candidate: {name} ({properties.DeviceType}) score={score}");
                     if (score > bestScore)
                     {
                         bestScore = score;
@@ -3557,8 +3587,12 @@ internal static unsafe class VulkanVideoPresenter
             _vk.GetPhysicalDeviceProperties(_physicalDevice, out var selected);
             _maxColorAttachments = selected.Limits.MaxColorAttachments;
             var selectedName = SilkMarshal.PtrToString((nint)selected.DeviceName) ?? "unknown";
-            Console.Error.WriteLine(
-                $"[LOADER][INFO] Vulkan device: {selectedName} ({selected.DeviceType})");
+            var apiMajor = (selected.ApiVersion >> 22) & 0x7F;
+            var apiMinor = (selected.ApiVersion >> 12) & 0x3FF;
+            var apiPatch = selected.ApiVersion & 0xFFF;
+            Log.Info(
+                $"Vulkan device: {selectedName} " +
+                $"(type={selected.DeviceType}, api={apiMajor}.{apiMinor}.{apiPatch})");
             VideoOutExports.SetSelectedGpuName(selectedName);
             if (_window is not null)
             {
@@ -3646,38 +3680,43 @@ internal static unsafe class VulkanVideoPresenter
 
             if (!supportedFeatures.RobustBufferAccess)
             {
-                Console.Error.WriteLine(
-                    "[LOADER][WARN] GPU does not support robustBufferAccess " +
-                    "translated shaders performing out-of-bounds buffer access may cause device loss.");
+                Log.Warn(
+  "GPU does not support robustBufferAccess " +
+                    "translated shaders performing out-of-bounds buffer access may cause device loss."
+);
             }
 
             if (!supportedFeatures.ShaderInt64)
             {
-                Console.Error.WriteLine(
-                    "[LOADER][WARN] GPU does not support shaderInt64 " +
-                    "translated shaders using 64-bit integers will fail.");
+                Log.Warn(
+  "GPU does not support shaderInt64 " +
+                    "translated shaders using 64-bit integers will fail."
+);
             }
 
             if (!supportedFeatures.VertexPipelineStoresAndAtomics || !supportedFeatures.FragmentStoresAndAtomics)
             {
-                Console.Error.WriteLine(
-                    "[LOADER][WARN] GPU does not support vertexPipelineStoresAndAtomics/fragmentStoresAndAtomics " +
-                    "translated shaders using storage buffers in vertex/fragment stages may fail.");
+                Log.Warn(
+  "GPU does not support vertexPipelineStoresAndAtomics/fragmentStoresAndAtomics " +
+                    "translated shaders using storage buffers in vertex/fragment stages may fail."
+);
             }
 
             if (!supportedFeatures.ShaderImageGatherExtended)
             {
-                Console.Error.WriteLine(
-                    "[LOADER][WARN] GPU does not support shaderImageGatherExtended " +
-                    "translated shaders using image gather with offsets/LOD/bias will fail.");
+                Log.Warn(
+  "GPU does not support shaderImageGatherExtended " +
+                    "translated shaders using image gather with offsets/LOD/bias will fail."
+);
             }
 
             if (!supportedFeatures.ShaderStorageImageReadWithoutFormat ||
                 !supportedFeatures.ShaderStorageImageWriteWithoutFormat)
             {
-                Console.Error.WriteLine(
-                    "[LOADER][WARN] GPU does not support shaderStorageImage(Read|Write)WithoutFormat " +
-                    "translated shaders using unformatted storage image load/store will fail.");
+                Log.Warn(
+  "GPU does not support shaderStorageImage(Read|Write)WithoutFormat " +
+                    "translated shaders using unformatted storage image load/store will fail."
+);
             }
 
             var maintenance8Features = new PhysicalDeviceMaintenance8FeaturesKHR
@@ -3702,16 +3741,18 @@ internal static unsafe class VulkanVideoPresenter
             var supportsRobustness2 = supportsRobustImageAccess2 || supportsNullDescriptor;
             if (!supportsMaintenance8)
             {
-                Console.Error.WriteLine(
-                    "[LOADER][WARN] GPU does not support VK_KHR_maintenance8 " +
-                    "translated shaders using a dynamic texel offset on non-gather image samples will fail.");
+                Log.Warn(
+  "GPU does not support VK_KHR_maintenance8 " +
+                    "translated shaders using a dynamic texel offset on non-gather image samples will fail."
+);
             }
 
             if (!supportsRobustImageAccess2)
             {
-                Console.Error.WriteLine(
-                    "[LOADER][WARN] GPU does not support VK_EXT_robustness2 robustImageAccess2 " +
-                    "translated shaders performing out-of-bounds image access may cause device loss.");
+                Log.Warn(
+  "GPU does not support VK_EXT_robustness2 robustImageAccess2 " +
+                    "translated shaders performing out-of-bounds image access may cause device loss."
+);
             }
 
             var swapchainExtension = (byte*)SilkMarshal.StringToPtr("VK_KHR_swapchain");
@@ -3805,8 +3846,7 @@ internal static unsafe class VulkanVideoPresenter
             }
             catch (Exception exception)
             {
-                Console.Error.WriteLine(
-                    $"[LOADER][WARN] Vulkan pipeline cache read failed: {exception.Message}");
+                Log.Warn($"Vulkan pipeline cache could not be read: {exception.Message}");
             }
 
             var result = TryCreatePipelineCache(initialData, out _pipelineCache);
@@ -3862,6 +3902,10 @@ internal static unsafe class VulkanVideoPresenter
                     null,
                     out pipelineCache);
             }
+
+            Log.Info(
+                $"Vulkan pipeline cache: " +
+                $"{(initialData.Length == 0 ? "new" : $"loaded {initialData.Length} bytes")}");
         }
 
         private static string GetPipelineCachePath()
@@ -3966,8 +4010,7 @@ internal static unsafe class VulkanVideoPresenter
             }
             catch (Exception exception)
             {
-                Console.Error.WriteLine(
-                    $"[LOADER][WARN] Vulkan pipeline cache save failed: {exception.Message}");
+                Log.Warn($"Vulkan pipeline cache could not be saved: {exception.Message}");
             }
         }
 
@@ -6551,10 +6594,11 @@ internal static unsafe class VulkanVideoPresenter
                     _tracedTextureCacheHits.Add(
                         (texture.Address, texture.Width, texture.Height, vkFormat)))
                 {
-                    Console.Error.WriteLine(
-                        $"[LOADER][TRACE] vk.texture_cache_hit addr=0x{texture.Address:X16} " +
+                    Log.Trace(
+  $"vk.texture_cache_hit addr=0x{texture.Address:X16} " +
                         $"size={texture.Width}x{texture.Height} " +
-                        $"image_format={guestImage.Format} view_format={vkFormat}");
+                        $"image_format={guestImage.Format} view_format={vkFormat}"
+);
                 }
 
                 if (guestImage.Width != texture.Width ||
@@ -7254,12 +7298,13 @@ internal static unsafe class VulkanVideoPresenter
             if (ShouldTraceVulkanResources() &&
                 _tracedTextureUploads.Add((texture.Address, width, height, vkFormat)))
             {
-                Console.Error.WriteLine(
-                    $"[LOADER][TRACE] vk.texture addr=0x{texture.Address:X16} " +
+                Log.Trace(
+  $"vk.texture addr=0x{texture.Address:X16} " +
                     $"fmt={texture.Format} num={texture.NumberType} vk={vkFormat} " +
                     $"size={width}x{height} row={rowLength} tile={texture.TileMode} " +
                     $"dst=0x{texture.DstSelect:X3} " +
-                    $"bytes={texture.RgbaPixels.Length} expected={expectedSize}");
+                    $"bytes={texture.RgbaPixels.Length} expected={expectedSize}"
+);
             }
             var pixels = texture.RgbaPixels.Length == (int)expectedSize
                 ? texture.RgbaPixels
@@ -8010,8 +8055,8 @@ internal static unsafe class VulkanVideoPresenter
             if (ShouldTraceVulkanResources() &&
                 _tracedGlobalBuffers.Add((guestBuffer.BaseAddress, guestBuffer.Length)))
             {
-                Console.Error.WriteLine(
-                    $"[LOADER][TRACE] vk.global_buffer base=0x{guestBuffer.BaseAddress:X16} " +
+                Log.Trace(
+                    $"vk.global_buffer base=0x{guestBuffer.BaseAddress:X16} " +
                     $"bytes={guestBuffer.Length}");
             }
             if (guestBuffer.Pooled)
@@ -9192,9 +9237,10 @@ internal static unsafe class VulkanVideoPresenter
                     return;
                 }
 
-                Console.Error.WriteLine(
-                    $"[LOADER][ERROR] Vulkan compute dispatch failed " +
-                    $"cs=0x{work.ShaderAddress:X16}: {exception.Message}");
+                Log.Error(
+  $"Vulkan compute dispatch failed " +
+                    $"cs=0x{work.ShaderAddress:X16}: {exception.Message}"
+);
             }
             finally
             {
@@ -9746,8 +9792,8 @@ internal static unsafe class VulkanVideoPresenter
         {
             if (work.Targets.Count > _maxColorAttachments)
             {
-                Console.Error.WriteLine(
-                    $"[LOADER][WARN] Vulkan skipped MRT draw requesting {work.Targets.Count} color attachments; " +
+                Log.Warn(
+                    $"Vulkan skipped MRT draw requesting {work.Targets.Count} color attachments; " +
                     $"the selected device supports {_maxColorAttachments}.");
                 ReturnPooledGuestData(work.Draw);
                 return;
@@ -9760,8 +9806,8 @@ internal static unsafe class VulkanVideoPresenter
                 if (!TryDecodeRenderTargetFormat(target.Format, target.NumberType, out targetFormats[index]) ||
                     !SupportsColorAttachment(targetFormats[index].Format))
                 {
-                    Console.Error.WriteLine(
-                        $"[LOADER][WARN] Vulkan skipped MRT draw with unsupported color target " +
+                    Log.Warn(
+                        $"Vulkan skipped MRT draw with unsupported color target " +
                         $"format={target.Format} number_type={target.NumberType}.");
                     ReturnPooledGuestData(work.Draw);
                     return;
@@ -9770,8 +9816,7 @@ internal static unsafe class VulkanVideoPresenter
 
             if (work.Draw.RenderState.Blends.Count != targetFormats.Length)
             {
-                Console.Error.WriteLine(
-                    "[LOADER][WARN] Vulkan skipped MRT draw with mismatched attachment/blend counts.");
+                Log.Warn("Vulkan skipped MRT draw with mismatched attachment/blend counts.");
                 ReturnPooledGuestData(work.Draw);
                 return;
             }
@@ -9781,8 +9826,7 @@ internal static unsafe class VulkanVideoPresenter
                 if (targetFormats[index].IsInteger &&
                     work.Draw.RenderState.Blends[index].Enable)
                 {
-                    Console.Error.WriteLine(
-                        "[LOADER][WARN] Vulkan skipped MRT draw with blending enabled for an integer attachment.");
+                    Log.Warn("Vulkan skipped MRT draw with blending enabled for an integer attachment.");
                     ReturnPooledGuestData(work.Draw);
                     return;
                 }
@@ -9795,8 +9839,7 @@ internal static unsafe class VulkanVideoPresenter
                     if (work.Draw.RenderState.Blends[index] !=
                         work.Draw.RenderState.Blends[0])
                     {
-                        Console.Error.WriteLine(
-                            "[LOADER][WARN] Vulkan skipped MRT draw requiring unsupported independentBlend.");
+                        Log.Warn("Vulkan skipped MRT draw requiring unsupported independentBlend.");
                         ReturnPooledGuestData(work.Draw);
                         return;
                     }
@@ -9834,8 +9877,8 @@ internal static unsafe class VulkanVideoPresenter
 
             if (hasStorageFeedback)
             {
-                Console.Error.WriteLine(
-                    $"[LOADER][WARN] Vulkan skipped storage render-target feedback loop " +
+                Log.Warn(
+                    $"Vulkan skipped render-target feedback loop " +
                     $"targets={string.Join(',', work.Targets.Where(target => target.Address != 0).Select(target => $"0x{target.Address:X16}"))}; " +
                     "sampled aliases use ordered snapshots");
                 ReturnPooledGuestData(work.Draw);
@@ -10256,31 +10299,15 @@ internal static unsafe class VulkanVideoPresenter
                                 (traceLargeWrites ? 2 : traceSmallWrites ? 48 : 3);
                         if (traceAddressWrite || shouldTraceWrite)
                         {
-                            var sampledTextures = string.Join(
-                                ',',
-                                work.Draw.Textures.Select(texture =>
-                                    $"0x{texture.Address:X}:{texture.Width}x{texture.Height}:" +
-                                    $"f{texture.Format}:n{texture.NumberType}:" +
-                                    $"storage={(texture.IsStorage ? 1 : 0)}"));
-                            var pixelDigest = Convert.ToHexString(
-                                SHA256.HashData(work.Draw.PixelSpirv).AsSpan(0, 4));
-                            Console.Error.WriteLine(
-                                $"[LOADER][TRACE] vk.guest_write_sample " +
-                                $"addr=0x{target.Address:X16} write={writeCount} " +
-                                $"vs_bytes={work.Draw.VertexSpirv.Length} " +
-                                $"ps_bytes={work.Draw.PixelSpirv.Length} ps_hash={pixelDigest} " +
-                                $"vertices={work.Draw.VertexCount} instances={work.Draw.InstanceCount} " +
-                                $"primitive=0x{work.Draw.PrimitiveType:X} " +
-                                $"readback={(shouldTraceWrite ? 1 : 0)} textures=[{sampledTextures}]");
-                        }
-
-                        if (shouldTraceWrite)
-                        {
                             _commandBuffer = _presentationCommandBuffer;
                             FlushBatchedGuestCommands();
                             Check(
                                 _vk.QueueWaitIdle(_queue),
                                 "vkQueueWaitIdle(guest write trace)");
+                            Log.Trace(
+                                $"vk.guest_write_sample " +
+                                $"addr=0x{target.Address:X16} write={writeCount} " +
+                                $"ps_bytes={work.Draw.PixelSpirv.Length}");
                             TraceGuestImageContents(target);
                         }
                     }
@@ -10312,9 +10339,10 @@ internal static unsafe class VulkanVideoPresenter
                     }
                 }
 
-                Console.Error.WriteLine(
-                    $"[LOADER][ERROR] Vulkan offscreen draw failed " +
-                    $"mrt={work.Targets.Count}: {exception.Message}");
+                Log.Error(
+  $"Vulkan offscreen draw failed " +
+                    $"mrt={work.Targets.Count}: {exception.Message}"
+);
             }
             finally
             {
@@ -11522,6 +11550,203 @@ internal static unsafe class VulkanVideoPresenter
                 _ => 0,
             };
 
+        private void UpdatePerformanceHud()
+        {
+            if (!_performanceHudEnabled)
+            {
+                return;
+            }
+
+            var now = Stopwatch.GetTimestamp();
+            if (_performanceHudLastTimestamp != 0 &&
+                Stopwatch.GetElapsedTime(_performanceHudLastTimestamp, now).TotalSeconds <
+                    PerformanceHudSampleSeconds)
+            {
+                return;
+            }
+
+            try
+            {
+                using var process = Process.GetCurrentProcess();
+                var processCpu = process.TotalProcessorTime;
+                var currentThreadCpu = new Dictionary<int, TimeSpan>();
+                var currentThreadIds = new HashSet<int>();
+                var hottestThreadId = 0;
+                var hottestThreadCpuSeconds = 0.0;
+
+                if (OperatingSystem.IsWindows())
+                {
+                    foreach (ProcessThread thread in process.Threads)
+                    {
+                        using (thread)
+                        {
+                            try
+                            {
+                                var threadId = thread.Id;
+                                var cpu = thread.TotalProcessorTime;
+                                currentThreadIds.Add(threadId);
+                                currentThreadCpu[threadId] = cpu;
+                                if (_performanceHudThreadCpu.TryGetValue(threadId, out var previousCpu))
+                                {
+                                    var deltaSeconds = Math.Max(0.0, (cpu - previousCpu).TotalSeconds);
+                                    if (deltaSeconds > hottestThreadCpuSeconds)
+                                    {
+                                        hottestThreadCpuSeconds = deltaSeconds;
+                                        hottestThreadId = threadId;
+                                    }
+                                }
+                            }
+                            catch (InvalidOperationException)
+                            {
+                            }
+                        }
+                    }
+                }
+
+                if (_performanceHudLastTimestamp != 0)
+                {
+                    var elapsedSeconds = Math.Max(
+                        Stopwatch.GetElapsedTime(_performanceHudLastTimestamp, now).TotalSeconds,
+                        0.001);
+                    var processCpuPercent = Math.Max(
+                        0.0,
+                        (processCpu - _performanceHudLastProcessCpu).TotalSeconds /
+                            elapsedSeconds /
+                            Math.Max(Environment.ProcessorCount, 1) *
+                            100.0);
+                    var hottestThreadPercent = hottestThreadCpuSeconds / elapsedSeconds * 100.0;
+                    var presentedFrames = _performanceHudPresentedFrames;
+                    var fps = (presentedFrames - _performanceHudLastPresentedFrames) / elapsedSeconds;
+                    var hotName = hottestThreadId == 0
+                        ? "idle"
+                        : GetPerformanceThreadName(hottestThreadId);
+                    long guestBacklog;
+                    int queuedGuestWork;
+                    lock (_gate)
+                    {
+                        guestBacklog = Math.Max(
+                            0,
+                            _enqueuedGuestWorkSequence - _completedGuestWorkSequence);
+                        queuedGuestWork = _pendingGuestWork.Count;
+                    }
+
+                    var gpuInFlight = _pendingGuestSubmissions.Count +
+                        (_presentationInFlight ? 1 : 0);
+                    var readCount = Interlocked.Read(
+                        ref Agc.Gen5ShaderScalarEvaluator.GlobalMemoryReadCount);
+                    var readBytes = Interlocked.Read(
+                        ref Agc.Gen5ShaderScalarEvaluator.GlobalMemoryReadBytes);
+                    var readHits = Interlocked.Read(
+                        ref Agc.Gen5ShaderScalarEvaluator.GlobalMemoryReadCacheHits);
+                    var readPvmBytes = Interlocked.Read(
+                        ref Agc.Gen5ShaderScalarEvaluator.GlobalMemoryReadPvmBytes);
+                    var readLibcBytes = Interlocked.Read(
+                        ref Agc.Gen5ShaderScalarEvaluator.GlobalMemoryReadLibcBytes);
+                    var readsPerSecond =
+                        (readCount - _performanceHudLastReadCount) / elapsedSeconds;
+                    var readMbPerSecond =
+                        (readBytes - _performanceHudLastReadBytes) /
+                        elapsedSeconds /
+                        (1024.0 * 1024.0);
+                    var readHitsPerSecond =
+                        (readHits - _performanceHudLastReadHits) / elapsedSeconds;
+                    var readPvmMbPerSecond =
+                        (readPvmBytes - _performanceHudLastReadPvmBytes) /
+                        elapsedSeconds /
+                        (1024.0 * 1024.0);
+                    var readLibcMbPerSecond =
+                        (readLibcBytes - _performanceHudLastReadLibcBytes) /
+                        elapsedSeconds /
+                        (1024.0 * 1024.0);
+                    _performanceHudLastReadCount = readCount;
+                    _performanceHudLastReadBytes = readBytes;
+                    _performanceHudLastReadHits = readHits;
+                    _performanceHudLastReadPvmBytes = readPvmBytes;
+                    _performanceHudLastReadLibcBytes = readLibcBytes;
+                    _window.Title =
+                        $"FPS {fps:0.0} CPU {processCpuPercent:0}% | " +
+                        $"HOT {hotName}#{hottestThreadId} {hottestThreadPercent:0}% | " +
+                        $"WORK {guestBacklog} (q{queuedGuestWork}/gpu{gpuInFlight}) | " +
+                        $"RD {readsPerSecond:0}/s {readMbPerSecond:0}MB/s h{readHitsPerSecond:0}/s " +
+                        $"P{readPvmMbPerSecond:0} L{readLibcMbPerSecond:0} | " +
+                        VideoOutExports.GetWindowTitle();
+                    _performanceHudLastPresentedFrames = presentedFrames;
+                }
+
+                _performanceHudThreadCpu.Clear();
+                foreach (var (threadId, cpu) in currentThreadCpu)
+                {
+                    _performanceHudThreadCpu[threadId] = cpu;
+                }
+
+                foreach (var staleThreadId in _performanceHudThreadNames.Keys
+                             .Where(threadId => !currentThreadIds.Contains(threadId))
+                             .ToArray())
+                {
+                    _performanceHudThreadNames.Remove(staleThreadId);
+                }
+
+                _performanceHudLastProcessCpu = processCpu;
+                _performanceHudLastTimestamp = now;
+            }
+            catch (Exception exception) when (
+                exception is InvalidOperationException or System.ComponentModel.Win32Exception)
+            {
+                _performanceHudLastTimestamp = now;
+            }
+        }
+
+        private string GetPerformanceThreadName(int threadId)
+        {
+            if (_performanceHudThreadNames.TryGetValue(threadId, out var cached))
+            {
+                return cached;
+            }
+
+            var name = "tid";
+            var handle = OpenThread(ThreadQueryLimitedInformation, false, (uint)threadId);
+            if (handle != 0)
+            {
+                try
+                {
+                    if (GetThreadDescription(handle, out var description) >= 0 && description != 0)
+                    {
+                        try
+                        {
+                            var described = Marshal.PtrToStringUni(description);
+                            if (!string.IsNullOrWhiteSpace(described))
+                            {
+                                name = described.Length <= 28 ? described : described[..28];
+                            }
+                        }
+                        finally
+                        {
+                            LocalFree(description);
+                        }
+                    }
+                }
+                finally
+                {
+                    CloseHandle(handle);
+                }
+            }
+
+            _performanceHudThreadNames[threadId] = name;
+            return name;
+        }
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern nint OpenThread(uint desiredAccess, bool inheritHandle, uint threadId);
+
+        [DllImport("kernel32.dll")]
+        private static extern int GetThreadDescription(nint thread, out nint description);
+
+        [DllImport("kernel32.dll")]
+        private static extern nint LocalFree(nint memory);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+        private static extern bool CloseHandle(nint handle);
         private void WaitForRenderWork()
         {
             var gpuWorkInFlight = _pendingGuestSubmissions.Count > 0 ||
@@ -11909,8 +12134,9 @@ internal static unsafe class VulkanVideoPresenter
                     (_directPresentationCount is 1 or 30 or 120 ||
                      _directPresentationCount % 600 == 0))
                 {
-                    Console.Error.WriteLine(
-                        $"[LOADER][TRACE] vk.present_sample frame={_directPresentationCount} " +
+                    tracePresentedGuestImage = true;
+                    Log.Trace(
+                        $"vk.present_sample frame={_directPresentationCount} " +
                         $"addr=0x{presentedGuestImage.Address:X16}");
                 }
             }
@@ -11932,14 +12158,23 @@ internal static unsafe class VulkanVideoPresenter
                         ] &&
                         _tracedGuestImageContents.Add(guestImage.Address))
                     {
-                        TraceGuestImageContents(guestImage);
+                        Log.Trace(
+                            $"vk.translated_draw kind={presentation.DrawKind} " +
+                            $"textures={translatedResources.Textures.Length}");
+                        foreach (var boundTexture in translatedResources.Textures)
+                        {
+                            if (boundTexture.GuestImage is { } guestImage &&
+                                _tracedGuestImageContents.Add(guestImage.Address))
+                            {
+                                TraceGuestImageContents(guestImage);
+                            }
+                        }
                     }
                 }
                 catch (Exception exception)
                 {
                     _presentedSequence = presentation.Sequence;
-                    Console.Error.WriteLine(
-                        $"[LOADER][ERROR] Vulkan VideoOut translated draw setup failed: {exception.Message}");
+                    Log.Error($"Vulkan VideoOut translated draw setup failed: {exception.Message}");
                     return;
                 }
             }
@@ -12137,29 +12372,31 @@ internal static unsafe class VulkanVideoPresenter
             if (presentation.IsSplash && !_splashPresented)
             {
                 _splashPresented = true;
-                Console.Error.WriteLine(
-                    $"[LOADER][INFO] Vulkan VideoOut presented splash: " +
-                    $"{presentation.Width}x{presentation.Height}");
+                Log.Info(
+  $"Vulkan VideoOut presented splash: " +
+                    $"{presentation.Width}x{presentation.Height}"
+);
             }
             else if (!presentation.IsSplash && !_firstFramePresented)
             {
                 _firstFramePresented = true;
-                Console.Error.WriteLine(
-                    $"[LOADER][INFO] Vulkan VideoOut presented first frame: " +
-                    $"{presentation.Width}x{presentation.Height}");
+                Log.Info(
+  $"Vulkan VideoOut presented first frame: " +
+                    $"{presentation.Width}x{presentation.Height}"
+);
             }
 
             if (pixels is null && !_firstGuestDrawPresented)
             {
                 _firstGuestDrawPresented = true;
-                Console.Error.WriteLine(
-                    $"[LOADER][INFO] Vulkan VideoOut presented guest frame: " +
+                Log.Info(
+                    Vulkan VideoOut presented guest frame: " +
                     (presentedGuestImage is not null
                         ? $"image=0x{presentedGuestImage.Address:X16} " +
                           $"{presentedGuestImage.Width}x{presentedGuestImage.Height}"
                         : presentation.TranslatedDraw is null
                         ? $"{presentation.DrawKind}"
-                        : $"shader textures={presentation.TranslatedDraw.Textures.Count}"));
+                        : $"shader textures={presentation.TranslatedDraw.Textures.Count}");
             }
 
             if (recreateAfterPresent)
@@ -12173,10 +12410,11 @@ internal static unsafe class VulkanVideoPresenter
             var bytesPerPixel = GetReadbackBytesPerPixel(image.Format);
             if (bytesPerPixel == 0)
             {
-                Console.Error.WriteLine(
-                    "[LOADER][TRACE] " +
+                Log.Trace(
+  "" +
                     $"vk.guest_image addr=0x{image.Address:X16} " +
-                    $"format={image.Format} readback=unsupported");
+                    $"format={image.Format} readback=unsupported"
+);
                 return;
             }
 
@@ -12337,14 +12575,12 @@ internal static unsafe class VulkanVideoPresenter
                         (int)bytesPerPixel);
                     var center = Convert.ToHexString(
                         bytes.Slice(centerOffset, (int)bytesPerPixel));
-                    Console.Error.WriteLine(
-                        "[LOADER][TRACE] " +
+                    Log.Trace(
                         $"vk.guest_image addr=0x{image.Address:X16} " +
                         $"size={image.Width}x{image.Height} format={image.Format} " +
                         $"nonzero_bytes={nonzeroBytes}/{byteCount} " +
                         $"nonblack_pixels={nonblackPixels}/{(ulong)image.Width * image.Height} " +
-                        $"center={center} sample_unique={CountSampledUniquePixels(bytes, bytesPerPixel)} " +
-                        $"hash=0x{hash:X16}");
+                        $"center={center} hash=0x{hash:X16}");
                     DumpGuestImageBytes(image, bytes);
                 }
                 finally
@@ -14143,8 +14379,8 @@ internal static unsafe class VulkanVideoPresenter
                     hash = (hash ^ b3) * 1099511628211UL;
                 }
 
-                Console.Error.WriteLine(
-                    $"[LOADER][TRACE] vk.swapchain_image size={_extent.Width}x{_extent.Height} " +
+                Log.Trace(
+                    $"vk.swapchain_image size={_extent.Width}x{_extent.Height} " +
                     $"format={_swapchainFormat} nonzero_bytes={nonzeroBytes}/{byteCount} " +
                     $"nonblack_pixels={nonblackPixels}/{(ulong)_extent.Width * _extent.Height} " +
                     $"hash=0x{hash:X16}");
@@ -14158,16 +14394,14 @@ internal static unsafe class VulkanVideoPresenter
                         dumpDir,
                         $"present-{seq:D4}-{_extent.Width}x{_extent.Height}-{_swapchainFormat}.bgra");
                     File.WriteAllBytes(path, bytes.ToArray());
-                    Console.Error.WriteLine($"[LOADER][TRACE] vk.swapchain_dump path={path}");
-					// Continuous readback is intentionally opt-in: each 1080p frame
-					// is several megabytes and synchronously waits for the GPU.
-					if (string.Equals(
-							Environment.GetEnvironmentVariable("SHARPEMU_GUEST_IMAGE_DUMP_CONTINUOUS"),
-							"1",
-							StringComparison.Ordinal))
-					{
-						_tracedPresentedSwapchain = false;
-					}
+                    Log.Trace($"vk.swapchain_dump path={path}");
+                    if (string.Equals(
+                            Environment.GetEnvironmentVariable("SHARPEMU_GUEST_IMAGE_DUMP_CONTINUOUS"),
+                            "1",
+                            StringComparison.Ordinal))
+                    {
+                        _tracedPresentedSwapchain = false;
+                    }
                 }
             }
             finally
@@ -14527,17 +14761,17 @@ internal static unsafe class VulkanVideoPresenter
                 if (!_swapchainRecreateDeferred)
                 {
                     _swapchainRecreateDeferred = true;
-                    Console.Error.WriteLine(
-                        $"[LOADER][INFO] Vulkan VideoOut deferred swapchain recreation: " +
-                        $"surface={surfaceWidth}x{surfaceHeight}");
+                    Log.Info(
+  $"Vulkan VideoOut deferred swapchain recreation: " +
+                        $"surface={surfaceWidth}x{surfaceHeight}"
+);
                 }
 
                 return;
             }
 
             _swapchainRecreateDeferred = false;
-            Console.Error.WriteLine(
-                $"[LOADER][INFO] Vulkan VideoOut recreating swapchain after {operation}: {result}");
+            Log.Info($"Vulkan VideoOut recreating swapchain after {operation}: {result}");
             _vk.DeviceWaitIdle(_device);
             DrainFrameSlots();
             CollectCompletedGuestSubmissions(waitForOldest: false);
@@ -14545,9 +14779,10 @@ internal static unsafe class VulkanVideoPresenter
             CreateSwapchain();
             CreateCommandResources();
             CreateGuestDrawResources();
-            Console.Error.WriteLine(
-                $"[LOADER][INFO] Vulkan VideoOut recreated swapchain: " +
-                $"{_extent.Width}x{_extent.Height}, format={_swapchainFormat}");
+            Log.Info(
+  $"Vulkan VideoOut recreated swapchain: " +
+                $"{_extent.Width}x{_extent.Height}, format={_swapchainFormat}"
+);
         }
 
         private void DestroySwapchainResources()
@@ -14719,9 +14954,10 @@ internal static unsafe class VulkanVideoPresenter
             if (!_deviceLostLogged)
             {
                 _deviceLostLogged = true;
-                Console.Error.WriteLine(
-                    "[LOADER][ERROR] Vulkan device lost; dropping subsequent guest GPU work. " +
-                    exception.Message);
+                Log.Error(
+  "Vulkan device lost; dropping subsequent guest GPU work. " +
+                    exception.Message
+);
             }
 
             return true;
@@ -14734,7 +14970,7 @@ internal static unsafe class VulkanVideoPresenter
                 return;
             }
 
-            Console.Error.WriteLine($"[LOADER][TRACE] {message}");
+            Log.Trace($"{message}");
         }
     }
 }

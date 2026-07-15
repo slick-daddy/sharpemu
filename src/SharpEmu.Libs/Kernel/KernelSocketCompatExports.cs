@@ -6,11 +6,13 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using SharpEmu.HLE;
+using SharpEmu.Logging;
 
 namespace SharpEmu.Libs.Kernel;
 
 internal static class KernelSocketCompatExports
 {
+    private static readonly SharpEmuLogger Log = SharpEmuLog.For("Libs.Kernel");
     private sealed class EmulatedSocketState
     {
         public TcpClient? Client;
@@ -433,7 +435,7 @@ internal static class KernelSocketCompatExports
     {
         if (string.Equals(Environment.GetEnvironmentVariable("SHARPEMU_LOG_NET"), "1", StringComparison.Ordinal))
         {
-            Console.Error.WriteLine($"[LOADER][DEBUG] {message}");
+            Log.Debug($"{message}");
         }
     }
 

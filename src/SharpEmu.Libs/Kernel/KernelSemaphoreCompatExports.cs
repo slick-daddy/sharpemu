@@ -5,11 +5,13 @@ using System.Buffers.Binary;
 using System.Collections.Concurrent;
 using System.Text;
 using SharpEmu.HLE;
+using SharpEmu.Logging;
 
 namespace SharpEmu.Libs.Kernel;
 
 public static class KernelSemaphoreCompatExports
 {
+    private static readonly SharpEmuLogger Log = SharpEmuLog.For("Libs.Kernel");
     private const int MaxSemaphoreNameLength = 128;
     private static readonly ConcurrentDictionary<uint, KernelSemaphoreState> _semaphores = new();
     private static int _nextSemaphoreHandle = 1;
@@ -159,7 +161,50 @@ public static class KernelSemaphoreCompatExports
         {
             if (timeoutAddress != 0)
             {
-                _ = TryWriteUInt32(ctx, timeoutAddress, 0);
+                if (!ctx.TryReadUInt32(timeoutAddress, out var timeoutMicros))
+                {
+                    return ctx.SetReturn(OrbisGen2Result.ORBIS_GEN2_ERROR_MEMORY_FAULT);
+                }
+
+                if (timeoutMicros == 0)
+                {
+                    _ = ctx.TryWriteUInt32(timeoutAddress, 0);
+                    {
+                        TraceSemaphore($"wait-timeout handle=0x{handle:X8} name='{semaphore.Name}' need={needCount} count={semaphore.Count}");
+                    }
+                }
+                else
+                {
+                    var deadline = GuestThreadExecution.ComputeDeadlineTimestamp(TimeSpan.FromTicks((long)timeoutMicros * 10L));
+                    var timedWaiter = new SemaphoreWaiter
+                    {
+                        Semaphore = semaphore,
+                        NeedCount = needCount,
+                        CancelEpochAtBlock = semaphore.CancelEpoch,
+                        Timed = true,
+                        Ctx = ctx,
+                        TimeoutAddress = timeoutAddress,
+                        DeadlineTimestamp = deadline,
+                    };
+                    if (GuestThreadExecution.RequestCurrentThreadBlock(
+                            ctx,
+                            "sceKernelWaitSema",
+                            semaphore.WakeKey,
+                            timedWaiter,
+                            blockDeadlineTimestamp: deadline))
+                    {
+                        semaphore.WaitingThreads++;
+                        {
+                            TraceSemaphore($"wait-block-timed handle=0x{handle:X8} name='{semaphore.Name}' need={needCount} count={semaphore.Count} timeout_us={timeoutMicros} waiters={semaphore.WaitingThreads}");
+                        }
+                        return ctx.SetReturn(OrbisGen2Result.ORBIS_GEN2_OK);
+                    }
+
+                    _ = ctx.TryWriteUInt32(timeoutAddress, 0);
+                    {
+                        TraceSemaphore($"wait-timeout handle=0x{handle:X8} name='{semaphore.Name}' need={needCount} count={semaphore.Count}");
+                    }
+                }
             }
 
             if (acquired)
@@ -315,7 +360,6 @@ public static class KernelSemaphoreCompatExports
             }
 
             semaphore.Count += signalCount;
-            // Wake host-thread waiters parked in the fallback path.
             Monitor.PulseAll(semaphore.Gate);
             if (_traceSema)
             {
@@ -379,6 +423,14 @@ public static class KernelSemaphoreCompatExports
             return SetReturn(ctx, OrbisGen2Result.ORBIS_GEN2_ERROR_NOT_FOUND);
         }
 
+        // Delete succeeds even with blocked waiters; they wake with the deleted
+        // result (the SCE kernel wakes waiters with the EACCES-class code).
+        lock (semaphore.Gate)
+        {
+            semaphore.Deleted = true;
+        }
+
+        _ = GuestThreadExecution.Scheduler?.WakeBlockedThreads(semaphore.WakeKey);
         if (_traceSema)
         {
             TraceSemaphore($"delete handle=0x{handle:X8} name='{semaphore.Name}'");
@@ -616,9 +668,6 @@ public static class KernelSemaphoreCompatExports
 
     // Call sites must check this before building the interpolated message; the trace
     // strings would otherwise be allocated on every semaphore op even with tracing off.
-    private static readonly bool _traceSema =
-        string.Equals(Environment.GetEnvironmentVariable("SHARPEMU_LOG_SEMA"), "1", StringComparison.Ordinal);
-
     private static void TraceSemaphore(string message)
     {
         if (!_traceSema)
@@ -626,7 +675,7 @@ public static class KernelSemaphoreCompatExports
             return;
         }
 
-        Console.Error.WriteLine($"[LOADER][TRACE] sema.{message}");
+        Log.Trace($"sema.{message}");
     }
 
     private static string FormatCallSite(CpuContext ctx)

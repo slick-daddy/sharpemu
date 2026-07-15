@@ -5,6 +5,7 @@ using System.Buffers.Binary;
 using System.Collections.Concurrent;
 using System.Text;
 using SharpEmu.HLE;
+using SharpEmu.Logging;
 
 namespace SharpEmu.Libs.Ampr;
 
@@ -19,6 +20,7 @@ namespace SharpEmu.Libs.Ampr;
 /// </summary>
 internal static class PakDirectoryTracker
 {
+    private static readonly SharpEmuLogger Log = SharpEmuLog.For("Libs.Ampr");
     private const int DirectoryEntrySize = 64;
     private const int DirectoryEntryNameLength = 56;
 
@@ -83,9 +85,10 @@ internal static class PakDirectoryTracker
                 best.Consumed = true;
                 if (_trace)
                 {
-                    Console.Error.WriteLine(
-                        $"[LOADER][TRACE] pak.directory_match: id=0x{fileId:X8} name='{best.Name}' " +
-                        $"filepos=0x{best.FilePos:X8} filelen=0x{best.FileLen:X8}");
+                    Log.Trace(
+  $"pak.directory_match: id=0x{fileId:X8} name='{best.Name}' " +
+                        $"filepos=0x{best.FilePos:X8} filelen=0x{best.FileLen:X8}"
+);
                 }
 
                 return best.FilePos;
@@ -116,8 +119,8 @@ internal static class PakDirectoryTracker
             state.NextOffset = fileOffset + bytesRead;
             if (_trace)
             {
-                Console.Error.WriteLine(
-                    $"[LOADER][TRACE] pak.directory_parsed: id=0x{fileId:X8} entries={state.Directory?.Count ?? 0}");
+                Log.Trace(
+                    pak.directory_parsed: id=0x{fileId:X8} entries={state.Directory?.Count ?? 0}");
             }
 
             return;
